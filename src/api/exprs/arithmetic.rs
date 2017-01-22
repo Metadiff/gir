@@ -72,5 +72,19 @@ pub fn mul_n(args: &Vec<Expr>) -> Result<Expr> {
     })
 }
 
+pub fn reciprocal(arg: &Expr) -> Result<Expr> {
+    Ok(Expr {
+        graph: arg.graph.clone(),
+        id: ids::reciprocal(&arg.graph, arg.id)?
+    })
+}
+
+pub fn div(arg0: &Expr, arg1: &Expr) -> Result<Expr> {
+    Ok(Expr {
+        graph: arg0.graph.clone(),
+        id: ids::div(&arg0.graph, arg0.id, arg1.id)?
+    })
+}
+
 
 

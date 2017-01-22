@@ -48,9 +48,7 @@ impl Operator for Neg {
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
-            let op = self.clone();
-            let data = op.apply(g, &vec![ancestor])?;
-            Ok(vec![(ancestor, g.get_mut().add_node(data))])
+            Ok(vec![(ancestor, api::ids::neg(g, dx)?)])
         } else {
             Ok(Vec::new())
         }
@@ -122,5 +120,42 @@ impl Operator for Mul {
             fixed_output_type: None,
         };
         &MUL
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Div {}
+
+impl Operator for Div {
+    #[allow(unused_variables, unused_mut)]
+    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+                    -> Result<Vec<(usize, usize)>> {
+        let ancestor = g.get_node(x)?.ancestors[0];
+        if flow_tree[ancestor] {
+            let minus_one = g.constant_scalar(-1.0, g.get_node(x)?.data_type).id;
+            Ok(vec![(ancestor, api::ids::mul(g, &vec![dx, x, x, minus_one])?)])
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    fn clone_box(&self) -> Box<Operator> {
+        Box::new(self.clone())
+    }
+
+    fn get_meta(&self) -> &OperatorMetaData {
+        static DIV: OperatorMetaData = OperatorMetaData{
+            name: "Div",
+            arity: Arity::Unary,
+            num_outputs: 1,
+            differential_parents: 1,
+            elementwise: true,
+            type_preserving: false,
+            reduction: false,
+            differentiable: true,
+            scalar_output: false,
+            fixed_output_type: None,
+        };
+        &DIV
     }
 }
