@@ -31,7 +31,8 @@ impl Operator for ConstantScalar {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into()
+            scope: "".into(),
+            sym_int: None
         }
     }
 
@@ -50,6 +51,7 @@ impl Operator for ConstantScalar {
             reduction: false,
             differentiable: false,
             scalar_output: true,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &CONSTANT_SCALAR

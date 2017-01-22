@@ -2,16 +2,22 @@ use ops::interface::*;
 use primitives::*;
 use graph::*;
 use errors::*;
+use api::*;
 
 #[derive(Debug, Clone)]
 pub struct Cast {
-    data_type: FundamentalType,
+    pub data_type: FundamentalType,
 }
 
 impl Operator for Cast {
     fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
-        -> Vec<(usize, Expr)> {
-        unimplemented!()
+        -> Result<Vec<(usize, usize)>> {
+        let ancestor = g.get_node(x)?.ancestors[0];
+        if flow_tree[ancestor] {
+            Ok(vec![(ancestor, ids::cast(g, dx, self.data_type)?)])
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -28,13 +34,14 @@ impl Operator for Cast {
             type_preserving: false,
             reduction: false,
             differentiable: true,
+            scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
-            scalar_output: false
         };
         &CAST
     }
-
-    fn get_data_type(&self, args: &Vec<Expr>) -> FundamentalType {
+    #[allow(unused_variables, unused_mut)]
+    fn get_data_type(&self, g: &Graph, args: &Vec<usize>) -> FundamentalType {
         self.data_type
     }
 }
@@ -44,8 +51,14 @@ pub struct Broadcast {}
 
 impl Operator for Broadcast {
     fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
-        -> Vec<(usize, Expr)> {
-        unimplemented!()
+        -> Result<Vec<(usize, usize)>> {
+        let ancestor = g.get_node(x)?.ancestors[0];
+        if flow_tree[ancestor] {
+            // Needs reduction sum
+            unimplemented!()
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -62,10 +75,15 @@ impl Operator for Broadcast {
             type_preserving: true,
             reduction: false,
             differentiable: true,
+            scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
-            scalar_output: false
         };
         &BROADCAST
+    }
+    #[allow(unused_variables, unused_mut)]
+    fn get_shape(&self, g: &Graph, args: &Vec<usize>) -> Shape {
+        g.get_node(args[1]).unwrap().shape.clone()
     }
 }
 
@@ -73,9 +91,11 @@ impl Operator for Broadcast {
 pub struct MakeConstant {}
 
 impl Operator for MakeConstant {
+    #[allow(unused_variables, unused_mut)]
     fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
-        -> Vec<(usize, Expr)> {
-        unimplemented!()
+        -> Result<Vec<(usize, usize)>> {
+        // No gradients are passed trough this operator
+        Ok(Vec::new())
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -92,8 +112,9 @@ impl Operator for MakeConstant {
             type_preserving: true,
             reduction: false,
             differentiable: false,
+            scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
-            scalar_output: false
         };
         &MAKE_CONSTANT
     }

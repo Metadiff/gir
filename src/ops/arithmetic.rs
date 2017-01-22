@@ -32,6 +32,7 @@ impl Operator for Add {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &ADD
@@ -69,6 +70,7 @@ impl Operator for Neg {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &NEG
@@ -117,6 +119,7 @@ impl Operator for Mul {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &MUL
@@ -154,6 +157,7 @@ impl Operator for Div {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &DIV

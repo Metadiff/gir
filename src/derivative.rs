@@ -124,13 +124,19 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
                 0 => match id {
                     Policy::Quite => {
                         let data_type = x_i.get()?.data_type;
-                        ut_jf.push(g.constant_scalar(0.0, data_type));
+                        let di = g.constant_scalar(0.0, data_type);
+                        let old_name = di.get()?.name.clone();
+                        di.get_mut()?.name = format!("{}|rd[{}]", old_name, x_i.id);
+                        ut_jf.push(di);
                     },
                     Policy::Warn => {
                         let err = ErrorKind::IndependentDerivative(i);
                         warn!(g.log, format!("[derivative] {}", err));
                         let data_type = x_i.get()?.data_type;
-                        ut_jf.push(g.constant_scalar(0.0, data_type));
+                        let di = g.constant_scalar(0.0, data_type);
+                        let old_name = di.get()?.name.clone();
+                        di.get_mut()?.name = format!("{}|rd[{}]", old_name, x_i.id);
+                        ut_jf.push(di);
                     },
                     Policy::Raise => {
                         let err = ErrorKind::IndependentDerivative(i);
@@ -139,15 +145,21 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
                     },
                 },
                 1 => {
+                    let id = v[0];
+                    let old_name = g.get_node(id)?.name.clone();
+                    g.get_node_mut(id)?.name = format!("{}|rd[{}]", old_name, x_i.id);
                     ut_jf.push(Expr{
                         graph: g.clone(),
-                        id: v.pop().unwrap()
+                        id: id
                     });
                 },
                 _ => {
+                    let id = api::ids::add(&g, &v)?;
+                    let old_name = g.get_node(id)?.name.clone();
+                    g.get_node_mut(id)?.name = format!("{}|rd[{}]", old_name, x_i.id);
                     ut_jf.push(Expr{
                         graph: g.clone(),
-                        id: api::ids::add(&g, &v)?
+                        id: id
                     });
                 }
             }
@@ -160,7 +172,7 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
 /// Returns the a vector of pairs of parent ids and their corresponding derivatives
 /// arising from their dependence on **x**.
 ///
-/// Mathematically this computes **df/dx * da/dx**, where **a** is an immediate
+/// Mathematically this computes **df/dx * dx/da**, where **a** is an immediate
 /// ancestor of **x**.
 ///
 /// If the `flow_tree` is `false` for any of the ancestors, this implies that no
@@ -179,6 +191,7 @@ pub fn reverse_diff_op<'a>(g: &Graph, x: usize, dx: &Vec<usize>, flow_tree: &Vec
         return Ok(Vec::new())
     }
 
+    // This is needed because operators like Add and Mul can have any number of parents
     let diff_parents = {
         let ref n = g.get().nodes[x];
         match n.op.get_meta().differential_parents {
@@ -191,6 +204,7 @@ pub fn reverse_diff_op<'a>(g: &Graph, x: usize, dx: &Vec<usize>, flow_tree: &Vec
         return Ok(Vec::new())
     }
 
+    // If more than one derivative incoming the total derivative is the sum
     let dx = match dx.len() {
         1 => dx[0],
         _ => api::ids::add(g, dx)?
@@ -210,7 +224,6 @@ pub fn reverse_diff_op<'a>(g: &Graph, x: usize, dx: &Vec<usize>, flow_tree: &Vec
     for &(ref p, ref pd) in &parent_derivatives {
         let old_name = g.get().nodes[*pd].name.clone();
         g.get_mut().nodes[*pd].name = format!("{}|rd[{}->{}]", old_name, x, p);
-
         debug!(g.log, "[derivative] Sending rd {} from {} to {}.", pd, x, p);
     }
     g.get_mut().scope = init_scope;

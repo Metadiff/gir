@@ -13,6 +13,7 @@ pub struct OperatorMetaData {
     pub reduction: bool,
     pub differentiable: bool,
     pub scalar_output: bool,
+    pub shape_operator: bool,
     pub fixed_output_type: Option<FundamentalType>,
 }
 
@@ -52,7 +53,8 @@ pub trait Operator: ::std::fmt::Debug {
             matrix_symmetry: self.get_matrix_symmetry(g, args),
             matrix_fill: self.get_matrix_fill(g, args),
             grad_level: self.get_grad_level(g, args),
-            scope: "".into()
+            scope: "".into(),
+            sym_int: None
         })
     }
 

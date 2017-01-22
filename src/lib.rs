@@ -14,5 +14,7 @@ pub mod ops;
 pub mod api;
 pub mod derivative;
 pub mod utils;
+pub mod dot;
 
-pub use graph::Graph;
+pub use self::graph::Graph;
+pub use self::dot::*;

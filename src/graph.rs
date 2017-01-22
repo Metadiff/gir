@@ -27,6 +27,7 @@ pub struct ExprData{
     pub matrix_fill: MatrixFill,
     pub grad_level: usize,
     pub scope: String,
+    pub sym_int: Option<SymInt>
 }
 
 #[derive(Debug, Clone)]
@@ -116,7 +117,7 @@ impl GraphData {
 
     pub fn add_node(&mut self, mut data: ExprData) -> usize {
         data.id = self.nodes.len();
-        data.name = "Derived".into();
+        data.name = "".into();
         data.scope = self.scope.clone();
         for &a in &data.ancestors {
             self.nodes[a].children.push(data.id)
@@ -144,7 +145,7 @@ impl GraphData {
         let mut new_expr = op.apply_null();
         let id = self.nodes.len();
         new_expr.id = id;
-        new_expr.name = "Constant".into();
+        new_expr.name = "Scalar".into();
         new_expr.scope = self.scope.clone();
         self.nodes.push(new_expr);
         self.order.push(id);

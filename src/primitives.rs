@@ -132,6 +132,14 @@ impl ::std::fmt::Display for MatrixFill {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub enum Axis {
+    Axis0 = 0,
+    Axis1 = 1,
+    Axis2 = 2,
+    Axis3 = 3
+}
+
 /// Symbolic integer used for shapes
 pub type SymInt = Polynomial<String, i64, u8>;
 
@@ -157,6 +165,15 @@ impl Shape {
             }
         } else {
             4
+        }
+    }
+
+    pub fn get(&self, axis: Axis) -> &SymInt {
+        match axis {
+            Axis::Axis0 => &self.0,
+            Axis::Axis1 => &self.1,
+            Axis::Axis2 => &self.2,
+            Axis::Axis3 => &self.3,
         }
     }
 

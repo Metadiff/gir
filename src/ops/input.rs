@@ -31,7 +31,8 @@ impl Operator for Input {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into()
+            scope: "".into(),
+            sym_int: None
         }
     }
 
@@ -50,6 +51,7 @@ impl Operator for Input {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &INPUT
@@ -101,7 +103,8 @@ impl Operator for Parameter {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into()
+            scope: "".into(),
+            sym_int: None
         }
     }
 
@@ -120,6 +123,7 @@ impl Operator for Parameter {
             reduction: false,
             differentiable: true,
             scalar_output: false,
+            shape_operator: false,
             fixed_output_type: None,
         };
         &PARAMETER
