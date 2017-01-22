@@ -43,5 +43,3 @@ pub fn expr_to_dot(io: &mut Write, expr: &ExprData) -> ::std::io::Result<()>  {
              expr.children
     )
 }
-//pub grad_level: usize,
-//pub sym_int: Option<SymInt>

@@ -6,6 +6,8 @@ use api;
 
 use std::collections::HashMap;
 
+/// Calculates the gradient of the expression **f** with respect to all of the
+/// expressions in **x** using reverse mode automatic differentiation.
 pub fn gradient(f: &Expr, x: &Vec<Expr>) -> Result<Vec<Expr>> {
     let ref g = f.graph;
     if f.get()?.shape.order() != 0 {
@@ -15,7 +17,8 @@ pub fn gradient(f: &Expr, x: &Vec<Expr>) -> Result<Vec<Expr>> {
     } else {
         let data_type = f.get()?.data_type;
         let u = vec![g.constant_scalar(1.0, data_type)];
-        reverse_diff(&vec![f.clone()], &x, &u)
+        let result = reverse_diff(&vec![f.clone()], &x, &u);
+        result
     }
 }
 
@@ -86,7 +89,7 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
         // Derivative messages
         let mut derivatives: HashMap<usize, Vec<usize>> = HashMap::new();
         let init_grad_level = g.get().grad_level;
-        let mut grad_level = init_grad_level;
+        let mut grad_level = 0;
         let (mut min_index, mut max_index) = (0, g.get().nodes.len());
 
         for (i, (fe, ue)) in f.iter().zip(u.iter()).enumerate() {
@@ -97,12 +100,16 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
                 .position(|x| *x == fe.id).unwrap());
             max_index = ::std::cmp::max(max_index, g.get().order.iter()
                 .position(|x| *x == fe.id).unwrap());
-            grad_level = ::std::cmp::max(grad_level, g.get().nodes[fe.id].grad_level);
+            grad_level = ::std::cmp::max(grad_level, g.get().nodes[fe.id].grad_level + 1);
         }
         for xe in x {
             min_index = ::std::cmp::min(min_index, g.get().order.iter()
                 .position(|x| *x == xe.id).unwrap());
         }
+
+        let init_scope = g.get().scope.clone();
+        g.get_mut().grad_level = grad_level;
+        g.get_mut().scope = format!("rd{}", grad_level);
 
         // Send derivative message in reverse mode
         let traversal: Vec<usize> = g.get().order[min_index..max_index]
@@ -164,6 +171,7 @@ pub fn reverse_diff(f: &Vec<Expr>, x: &Vec<Expr>, u: &Vec<Expr>)
                 }
             }
         };
+        g.get_mut().scope = init_scope;
         trace!(g.log, "[derivative] Fished reverse_diff.");
         Ok(ut_jf)
     }
@@ -204,16 +212,20 @@ pub fn reverse_diff_op<'a>(g: &Graph, x: usize, dx: &Vec<usize>, flow_tree: &Vec
         return Ok(Vec::new())
     }
 
+    let init_scope = g.get().scope.clone();
+    let new_scope = if g.get().nodes[x].scope == "" {
+        format!("rd{}", g.get().grad_level)
+    } else {
+        format!("rd{}{}{}", g.get().grad_level,  g.get().props.scope_delimiter, g.get().nodes[x].scope)
+    };
+    g.get_mut().scope = new_scope;
+
     // If more than one derivative incoming the total derivative is the sum
     let dx = match dx.len() {
         1 => dx[0],
         _ => api::ids::add(g, dx)?
     };
     debug!(g.log, "[derivative] Derivative of {} is {}.", x, dx);
-
-    let init_scope = g.get().scope.clone();
-    let x_scope = g.get().nodes[x].scope.clone();
-    g.get_mut().scope = x_scope;
 
     let old_name = g.get().nodes[dx].name.clone();
     g.get_mut().nodes[dx].name = format!("{}|rd[{}]", old_name, x);
