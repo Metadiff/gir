@@ -38,4 +38,5 @@ bindings to libraries like cuDNN are a must as well.
  graph optimizations such that we can achieve comparable run times to
  leading frameworks like Theano and Tensorflow.
  
- From there on we can refine each one of these semi indecently.
+ From there on we can refine and reiterate each one of these 
+ semi independently. 
