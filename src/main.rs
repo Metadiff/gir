@@ -15,8 +15,8 @@ fn main() {
 //    println!("{}, {}, {}", n1.id, n2.id, n3.id);
 //    println!("{:?}", n1.graph);
     let r = g::derivative::gradient(n6, &vec![n0.clone()]).unwrap();
-    let mut out = ::std::io::stdout();
-    graph_ir::to_dot(&mut out, &g);
+    graph_ir::to_dot(&mut ::std::io::stdout(), &g);
+    println!("{:?}", g.get().order);
 //    println!("{:?}", r[0].get().unwrap());
 //    println!("Hello, world! - {:?}", r);
 }
