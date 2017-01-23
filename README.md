@@ -6,8 +6,6 @@ Graph Intermediate Representation (GIR) library for ML
 
 A group of GIR developers and users can be found in the [Gitter/Rust-ML][gitter] room.
 
-[gitter](https://gitter.im/rust-ml/Lobby)
-
 ## License
 
 Licensed under either of
@@ -21,3 +19,5 @@ Licensed under either of
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you shall be dual licensed as above, without any
 additional terms or conditions.
+
+[gitter]: https://gitter.im/rust-ml/Lobby
