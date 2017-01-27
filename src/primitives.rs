@@ -50,7 +50,9 @@ pub enum Arity {
     Unary = 1,
     Binary = 2,
     Ternary = 3,
-    Nary = 4
+    Quaternary = 4,
+    Quinary = 5,
+    Nary = 6
 }
 
 impl ::std::fmt::Display for Arity {
@@ -60,6 +62,8 @@ impl ::std::fmt::Display for Arity {
             Arity::Unary => write!(fmt, "Unary"),
             Arity::Binary => write!(fmt, "Binary"),
             Arity::Ternary => write!(fmt, "Ternary"),
+            Arity::Quaternary => write!(fmt, "Quaternary"),
+            Arity::Quinary => write!(fmt, "Quinary"),
             Arity::Nary => write!(fmt, "Nary"),
         }
     }
@@ -140,8 +144,59 @@ pub enum Axis {
     Axis3 = 3
 }
 
+impl Axis {
+    pub fn iter() -> ::std::slice::Iter<'static, Axis> {
+        static ALL: &'static [Axis] = &[Axis::Axis0, Axis::Axis1, Axis::Axis2, Axis::Axis3];
+        ALL.iter()
+    }
+}
+
+impl ::std::fmt::Display for Axis {
+    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        match *self {
+            Axis::Axis0 => write!(fmt, "0"),
+            Axis::Axis1 => write!(fmt, "1"),
+            Axis::Axis2 => write!(fmt, "2"),
+            Axis::Axis3 => write!(fmt, "3"),
+        }
+    }
+}
+
 /// Symbolic integer used for shapes
 pub type SymInt = Polynomial<String, i64, u8>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Dim {
+    Constant(usize),
+    Variable(String)
+}
+
+impl<'a> ::std::convert::From<&'a str> for Dim {
+    fn from(s: &'a str) -> Self {
+        Dim::Variable(format!("{}", s))
+    }
+}
+
+impl ::std::convert::From<String> for Dim {
+    fn from(s: String) -> Self {
+        Dim::Variable(s)
+    }
+}
+
+impl ::std::convert::From<usize> for Dim {
+    fn from(v: usize) -> Self {
+        Dim::Constant(v)
+    }
+}
+
+impl ::std::convert::Into<SymInt> for Dim {
+    fn into(self) -> SymInt {
+        match self {
+            Dim::Constant(x) => (x as i64).into(),
+            Dim::Variable(id) => ::symbolic_polynomials::variable(id)
+        }
+    }
+}
 
 /// A tensor shape is just a 4-tuple of SymInt
 #[derive(Clone, Debug, PartialEq)]
@@ -177,8 +232,33 @@ impl Shape {
         }
     }
 
+    pub fn set(&mut self, axis: Axis, value: SymInt) -> () {
+        match axis {
+            Axis::Axis0 => {self.0 = value;},
+            Axis::Axis1 => {self.1 = value;},
+            Axis::Axis2 => {self.2 = value;},
+            Axis::Axis3 => {self.3 = value;},
+        }
+    }
+
     pub fn scalar_shape() -> Self {
         Shape(1.into(), 1.into(), 1.into(), 1.into())
+    }
+
+    pub fn vector_shape(dim0: Dim) -> Self {
+        Shape(dim0.into(), 1.into(), 1.into(), 1.into())
+    }
+
+    pub fn matrix_shape(dim0: Dim, dim1: Dim) -> Self {
+        Shape(dim0.into(), dim1.into(), 1.into(), 1.into())
+    }
+
+    pub fn tensor3_shape(dim0: Dim, dim1: Dim, dim2: Dim) -> Self {
+        Shape(dim0.into(), dim1.into(), dim2.into(), 1.into())
+    }
+
+    pub fn tensor4_shape(dim0: Dim, dim1: Dim, dim2: Dim, dim3: Dim) -> Self {
+        Shape(dim0.into(), dim1.into(), dim2.into(), dim3.into())
     }
 }
 
@@ -199,6 +279,12 @@ pub enum Policy {
     Quite = 0,
     Warn = 1,
     Raise = 2
+}
+
+impl Default for Policy {
+    fn default() -> Self {
+        Policy::Warn
+    }
 }
 
 impl ::std::fmt::Display for Policy {

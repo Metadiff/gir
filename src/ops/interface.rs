@@ -1,13 +1,18 @@
 use primitives::*;
 use graph::*;
 use errors::*;
+use api::ids;
+use std::any::Any;
+use std::borrow::Borrow;
+use std::cell::RefCell;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperatorMetaData {
     pub name: &'static str,
     pub arity: Arity,
     pub num_outputs: usize,
     pub differential_parents: usize,
+    pub ordered_parents: bool,
     pub elementwise: bool,
     pub type_preserving: bool,
     pub reduction: bool,
@@ -21,38 +26,45 @@ pub trait Operator: ::std::fmt::Debug {
     /// Calculates the derivative of the parent expressions given the derivative
     /// of the current.
     fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
-        -> Result<Vec<(usize, usize)>>;
+                    -> Result<Vec<(usize, usize)>>;
 
     /// Clones the concrete operator and wraps it in a box again
     fn clone_box(&self) -> Box<Operator>;
+
+    /// Gives back any extra args boxed
+    fn get_args(&self) -> Option<Box<Any>> {
+        None
+    }
 
     /// Returns the meta data
     fn get_meta(&self) -> &OperatorMetaData;
 
     fn apply_expr(&self, args: &Vec<Expr>) -> Result<ExprData> {
         if args.len() == 0 {
-            Err(ErrorKind::InvalidArguments(0).into())
+            Err(ErrorKind::InvalidArguments(
+                String::new() + self.get_meta().name, Vec::new(),
+                "apply_expr takes at least 1 argument.".into()).into())
         } else {
-            self.apply(&args[0].graph, &args.iter().map(|x| x.id).collect())
+            self.apply(&args[0].graph, args.iter().map(|x| x.id).collect())
         }
     }
 
-    fn apply(&self, g: &Graph, args: &Vec<usize>) -> Result<ExprData> {
-        self.verify_args(g, args)?;
+    fn apply(&self, g: &Graph, args: Vec<usize>) -> Result<ExprData> {
+        let args = self.verify_args(g, args)?;
         Ok(ExprData{
             id: 0,
             name: "".into(),
             ancestors: args.clone(),
             children: Vec::new(),
             op: self.clone_box(),
-            data_type: self.get_data_type(g, args),
-            shape: self.get_shape(g, args),
-            is_input_dependent: self.get_is_input_dependent(g, args),
-            is_differentiable: self.get_is_differentiable(g, args),
-            matrix_positivity: self.get_matrix_positivity(g, args),
-            matrix_symmetry: self.get_matrix_symmetry(g, args),
-            matrix_fill: self.get_matrix_fill(g, args),
-            grad_level: self.get_grad_level(g, args),
+            data_type: self.get_data_type(g, &args),
+            shape: self.get_shape(g, &args),
+            is_input_dependent: self.get_is_input_dependent(g, &args),
+            is_differentiable: self.get_is_differentiable(g, &args),
+            matrix_positivity: self.get_matrix_positivity(g, &args),
+            matrix_symmetry: self.get_matrix_symmetry(g, &args),
+            matrix_fill: self.get_matrix_fill(g, &args),
+            grad_level: self.get_grad_level(g, &args),
             scope: "".into(),
             sym_int: None
         })
@@ -63,7 +75,7 @@ pub trait Operator: ::std::fmt::Debug {
         unimplemented!()
     }
 
-    fn verify_args(&self, g: &Graph, args: &Vec<usize>) -> Result<()> {
+    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         default::verify_args(meta, g, args)
     }
@@ -114,33 +126,54 @@ impl Clone for Box<Operator> {
 
 
 
-mod default {
+pub mod default {
     use super::*;
 
-    pub fn verify_args(meta: &OperatorMetaData, g: &Graph, args: &Vec<usize>) -> Result<()> {
+    pub fn verify_args(meta: &OperatorMetaData, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         // Verify number of arguments
+        let l = args.len();
         match meta.arity {
-            Arity::Nullary => if args.len() != 0 {
-                return Err(ErrorKind::InvalidArguments(0).into())
+            Arity::Nullary => if l != 0 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 0 arguments, got {}.", l)).into())
             },
-            Arity::Unary => if args.len() != 1 {
-                return Err(ErrorKind::InvalidArguments(0).into())
+            Arity::Unary => if l != 1 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 1 arguments, got {}.", l)).into())
             },
-            Arity::Binary => if args.len() != 2 {
-                return Err(ErrorKind::InvalidArguments(0).into())
+            Arity::Binary => if l != 2 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 2 arguments, got {}.", l)).into())
             },
-            Arity::Ternary => if args.len() != 3 {
-                return Err(ErrorKind::InvalidArguments(0).into())
+            Arity::Ternary => if l != 3 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 3 arguments, got {}.", l)).into())
             },
-            Arity::Nary => if args.len() < 2 {
-                return Err(ErrorKind::InvalidArguments(0).into())
+            Arity::Quaternary => if l != 4 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 4 arguments, got {}.", l)).into())
+            },
+            Arity::Quinary => if l != 5 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting 5 arguments, got {}.", l)).into())
+            },
+            Arity::Nary => if l < 2 {
+                return Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("Expecting at least 2 arguments, got {}.", l)).into())
             },
         }
         // Verify individual arguments
-        for &arg in args {
-            g.get().nodes.get(arg).ok_or(ErrorKind::InvalidArguments(0))?;
+        for &arg in &args {
+            g.get().nodes.get(arg).ok_or(ErrorKind::InvalidExprAccess(arg))?;
         }
-        Ok(())
+        Ok(args)
     }
 
     pub fn get_data_type(meta: &OperatorMetaData, g: &Graph, args: &Vec<usize>) -> FundamentalType {
@@ -161,6 +194,16 @@ mod default {
         } else {
             unimplemented!()
         }
+    }
+
+    pub fn get_reduction_shape<T: Borrow<[bool; 4]>>(mut shape: Shape, axes: T) -> Shape {
+        let axes = axes.borrow();
+        for &axis in Axis::iter() {
+            if axes[axis as usize] {
+                shape.set(axis, 1.into());
+            }
+        }
+        shape
     }
 
     #[allow(unused_variables, unused_mut)]
@@ -185,4 +228,95 @@ mod default {
             false
         }
     }
+
+    pub fn broadcast_shapes(graph: &Graph, name: &str, mut args: Vec<usize>) -> Result<Vec<usize>> {
+        let mut shape = graph.get_node(args[0]).unwrap().shape.clone();
+        let mut shape_i = [args[0], args[0], args[0], args[0]];
+        for &a in args.iter().skip(1) {
+            let ref ai_shape = graph.get_node(a).unwrap().shape;
+            for &axis in Axis::iter() {
+                if shape.get(axis) != ai_shape.get(axis) {
+                    if *shape.get(axis) == 1 as i64 {
+                        shape.set(axis, ai_shape.get(axis).clone());
+                        shape_i[axis as usize] = a;
+                    } else if *ai_shape.get(axis) != 1 as i64 {
+                        return Err(ErrorKind::InvalidShapes(
+                            format!("{}", name),
+                            format!("{}", shape),
+                            format!("{}", ai_shape)).into())
+                    }
+                }
+            }
+        }
+        // Make sure all arguments are up to that shape, if not broadcast them accordingly
+        for a in args.iter_mut() {
+            if shape != graph.get_node(*a).unwrap().shape {
+                let br: Vec<Option<usize>> = Axis::iter().zip(shape_i.iter())
+                    .map(|(&axis, &arg_id)| {
+                        if shape.get(axis) != graph.get_node(*a).unwrap().shape.get(axis) {
+                            Some(ids::dim(graph, arg_id, axis).unwrap())
+                        } else {
+                            None
+                        }
+                    }).collect();
+                match RefCell::borrow(&graph.rc).props.policies.implicit_broadcast {
+                    Policy::Quite => {},
+                    Policy::Warn => {
+                        warn!(graph.log,
+                        format!("[{}] Implicit broadcast from shape {} to shape {}.",
+                                name,  graph.get_node(*a).unwrap().shape, shape));
+                    },
+                    Policy::Raise => {
+                        return Err(ErrorKind::InvalidShapes(
+                            format!("{}", name),
+                            format!("{}", graph.get_node(*a).unwrap().shape),
+                            format!("{}", shape)).into())
+                    },
+                }
+                *a = ids::broadcast(graph, *a, [br[0], br[1], br[2], br[3]])?;
+            }
+        }
+        Ok(args)
+    }
+
+    pub fn same_graph<T: Borrow<Expr>>(exprs: &Vec<T>) -> Result<()> {
+        if exprs.len() > 1 {
+            let ref g0 = exprs[0].borrow().graph;
+            for expr in exprs.iter().skip(1) {
+                if !::std::ptr::eq(&*g0.rc, &*expr.borrow().graph.rc) {
+                    return Err(ErrorKind::NotFromTheSameGraph.into())
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn same_graph_2<T1: Borrow<Expr>, T2: Borrow<Expr>>(expr0: T1, expr1: T2) -> Result<()> {
+        if !::std::ptr::eq(&*expr0.borrow().graph.rc, &*expr1.borrow().graph.rc) {
+            Err(ErrorKind::NotFromTheSameGraph.into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn same_graph_3(expr0: &Expr, expr1: &Expr, expr2: &Expr) -> Result<()> {
+        if !::std::ptr::eq(&*expr0.graph.rc, &*expr1.graph.rc) ||
+            !::std::ptr::eq(&*expr0.graph.rc, &*expr2.graph.rc) {
+            Err(ErrorKind::NotFromTheSameGraph.into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn same_graph_4(expr0: &Expr, expr1: &Expr, expr2: &Expr, expr3: &Expr) -> Result<()> {
+        if !::std::ptr::eq(&*expr0.graph.rc, &*expr1.graph.rc) ||
+            !::std::ptr::eq(&*expr0.graph.rc, &*expr2.graph.rc) ||
+            !::std::ptr::eq(&*expr0.graph.rc, &*expr3.graph.rc) {
+            Err(ErrorKind::NotFromTheSameGraph.into())
+        } else {
+            Ok(())
+        }
+    }
+
+
 }

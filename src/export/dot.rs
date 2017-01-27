@@ -1,9 +1,4 @@
-use primitives::*;
-use props::*;
-use ops::*;
-use errors::*;
 use graph::*;
-
 use std::io::Write;
 
 pub fn to_dot(io: &mut Write, graph: &Graph) -> ::std::io::Result<()>  {
@@ -23,23 +18,33 @@ pub fn to_dot(io: &mut Write, graph: &Graph) -> ::std::io::Result<()>  {
 }
 
 pub fn expr_to_dot(io: &mut Write, expr: &ExprData) -> ::std::io::Result<()>  {
+//    writeln!(io, "\tN{} [label=\"\
+//    {}{:?}\\n\
+//    id:{}\\n\
+//    name:{}\\n\
+//    data_type:{}\\n\
+//    shape:{}\\n\
+//    scope:{}\\n\
+//    children:{:?}\\n\
+//    \"];",
+//             expr.id,
+//             expr.op.get_meta().name,
+//             expr.ancestors,
+//             expr.id,
+//             expr.name,
+//             expr.data_type,
+//             expr.shape,
+//             expr.scope,
+//             expr.children
+//    )
     writeln!(io, "\tN{} [label=\"\
     {}{:?}\\n\
-    id:{}\\n\
-    name:{}\\n\
-    data_type:{}\\n\
-    shape:{}\\n\
-    scope:{}\\n\
-    children:{:?}\\n\
+    id:{},shape:{}\\n\
     \"];",
              expr.id,
              expr.op.get_meta().name,
              expr.ancestors,
              expr.id,
-             expr.name,
-             expr.data_type,
              expr.shape,
-             expr.scope,
-             expr.children
     )
 }

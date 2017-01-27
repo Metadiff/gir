@@ -2,7 +2,7 @@ use ops::interface::*;
 use primitives::*;
 use graph::*;
 use errors::*;
-use api;
+use api::ids;
 
 #[derive(Debug, Clone)]
 pub struct Add {}
@@ -17,6 +17,12 @@ impl Operator for Add {
             .map(|id| (*id, dx)).collect())
     }
 
+    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+        let meta = self.get_meta();
+        let args = default::verify_args(meta, g, args)?;
+        Ok(default::broadcast_shapes(g, meta.name, args)?)
+    }
+
     fn clone_box(&self) -> Box<Operator> {
         Box::new(self.clone())
     }
@@ -27,6 +33,7 @@ impl Operator for Add {
             arity: Arity::Nary,
             num_outputs: 1,
             differential_parents: ::std::usize::MAX,
+            ordered_parents: false,
             elementwise: true,
             type_preserving: false,
             reduction: false,
@@ -49,10 +56,21 @@ impl Operator for Neg {
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
-            Ok(vec![(ancestor, api::ids::neg(g, dx)?)])
+            Ok(vec![(ancestor, ids::neg(g, dx)?)])
         } else {
             Ok(Vec::new())
         }
+    }
+
+    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+        let meta = self.get_meta();
+        let args = default::verify_args(meta, g, args)?;
+        if g.get_node(args[0])?.data_type == FundamentalType::Boolean {
+            return Err(ErrorKind::InvalidArguments(
+                String::new() + meta.name, args,
+                "Not applicable to boolean expressions.".into()).into())
+        }
+        Ok(args)
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -65,6 +83,7 @@ impl Operator for Neg {
             arity: Arity::Unary,
             num_outputs: 1,
             differential_parents: 1,
+            ordered_parents: true,
             elementwise: true,
             type_preserving: true,
             reduction: false,
@@ -91,17 +110,23 @@ impl Operator for Mul {
                 let mut result = Vec::new();
                 let ids = g.get_node(x)?.ancestors.clone();
                 if flow_tree[ids[0]] {
-                    let dp = api::ids::mul(g, &vec![dx, ids[1]])?;
+                    let dp = ids::mul(g, vec![dx, ids[1]])?;
                     result.push((ids[0], dp));
                 }
                 if flow_tree[ids[1]] {
-                    let dp = api::ids::mul(g, &vec![dx, ids[0]])?;
+                    let dp = ids::mul(g, vec![dx, ids[0]])?;
                     result.push((ids[1], dp));
                 }
                 Ok(result)
             },
             _ => unimplemented!()
         }
+    }
+
+    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+        let meta = self.get_meta();
+        let args = default::verify_args(meta, g, args)?;
+        Ok(default::broadcast_shapes(g, meta.name, args)?)
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -114,6 +139,7 @@ impl Operator for Mul {
             arity: Arity::Nary,
             num_outputs: 1,
             differential_parents: ::std::usize::MAX,
+            ordered_parents: false,
             elementwise: true,
             type_preserving: false,
             reduction: false,
@@ -136,10 +162,21 @@ impl Operator for Div {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
             let minus_one = g.constant_scalar(-1.0, g.get_node(x)?.data_type).id;
-            Ok(vec![(ancestor, api::ids::mul(g, &vec![dx, x, x, minus_one])?)])
+            Ok(vec![(ancestor, ids::mul(g, vec![dx, x, x, minus_one])?)])
         } else {
             Ok(Vec::new())
         }
+    }
+
+    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+        let meta = self.get_meta();
+        let args = default::verify_args(meta, g, args)?;
+        if g.get_node(args[0])?.data_type == FundamentalType::Boolean {
+            return Err(ErrorKind::InvalidArguments(
+                String::new() + meta.name, args,
+                "Not applicable to boolean expressions.".into()).into())
+        }
+        Ok(args)
     }
 
     fn clone_box(&self) -> Box<Operator> {
@@ -152,6 +189,7 @@ impl Operator for Div {
             arity: Arity::Unary,
             num_outputs: 1,
             differential_parents: 1,
+            ordered_parents: true,
             elementwise: true,
             type_preserving: false,
             reduction: false,

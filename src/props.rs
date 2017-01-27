@@ -2,22 +2,23 @@ use primitives::*;
 use std::path::PathBuf;
 
 /// Collection of policies used in the graph
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GraphPolicies {
     pub implicit_broadcast: Policy,
     pub implicit_cast: Policy,
+    pub downcast: Policy,
     pub independent_derivative: Policy
 }
 
-impl Default for GraphPolicies {
-    fn default() -> Self {
-        GraphPolicies{
-            implicit_broadcast: Policy::Warn,
-            implicit_cast: Policy::Warn,
-            independent_derivative: Policy::Warn
-        }
-    }
-}
+//impl Default for GraphPolicies {
+//    fn default() -> Self {
+//        GraphPolicies{
+//            implicit_broadcast: Policy::Warn,
+//            implicit_cast: Policy::Warn,
+//            independent_derivative: Policy::Warn
+//        }
+//    }
+//}
 
 pub trait LoadFromSystem: Default {
     fn load_from_system() -> Self {

@@ -1,4 +1,4 @@
-//use primitives::*;
+use primitives::*;
 
 error_chain!{
         errors {
@@ -24,9 +24,10 @@ error_chain!{
 
             /// Error when attempting to perform an operation on tensors whose shapes are
             /// not compatible (none of them is broadcastable to the other)
-            InvalidShapes(shape1: String, shape2: String) {
+            InvalidShapes(op_name: String, shape1: String, shape2: String) {
                 description("The shapes given are incompatible.")
-                display("The shapes {} and {} are incompatible", shape1, shape2)
+                display("The shapes {} and {} given to operator {} are incompatible",
+                shape1, shape2, op_name)
             }
 
             /// Error when requesting a derivative, but the functions do not depend on one of the
@@ -36,9 +37,19 @@ error_chain!{
                 display("The functions 'f' are independent of the tensor 'x' at index {}.", index)
             }
 
-            InvalidArguments(a: usize) {
-                description("invalid args")
-                display("invalid args")
+            InvalidArguments(op: String, args: Vec<usize>, msg: String) {
+                description("Invalid arguments.")
+                display("Invalid arguments: {:?}. '{}' message: {}", args, op, msg)
+            }
+
+            ParameterAlreadyExists(name: String) {
+                description("Trying to create a parameter which already exists in the graph.")
+                display("The parameter '{}' already exists in the graph.", name)
+            }
+
+            Downcast(from: FundamentalType, to: FundamentalType) {
+                description("Down casting tensor.")
+                display("Down casting tensor from {} to {}.", from, to)
             }
         }
 //        foreign_links {
