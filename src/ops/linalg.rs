@@ -10,16 +10,18 @@ pub struct MatrixMul {}
 
 impl Operator for MatrixMul {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let anc = g.get_node(x)?.ancestors.clone();
         if anc.len() == 2 {
             let mut res = Vec::new();
             if flow_tree[anc[0]] {
-                res.push((anc[0], ids::mat_mul(g, anc[1], ids::reorder(g, dx, None)?)?));
+                let dx_transpose = ids::reorder(g, dx, None)?;
+                res.push((anc[0], ids::mat_mul(g, anc[1], dx_transpose)?));
             }
             if flow_tree[anc[1]] {
-                res.push((anc[1], ids::mat_mul(g, ids::reorder(g, anc[0], None)?, dx)?));
+                let anc_transpose = ids::reorder(g, anc[0], None)?;
+                res.push((anc[1], ids::mat_mul(g, anc_transpose, dx)?));
             }
             Ok(res)
         } else {
@@ -27,7 +29,7 @@ impl Operator for MatrixMul {
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         // Verify all args are 2 dimensional and that their mid shapes match

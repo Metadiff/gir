@@ -10,12 +10,13 @@ pub struct Tanh {}
 
 impl Operator for Tanh {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let anc = g.get_node(x)?.ancestors[0];
         if flow_tree[anc] {
-            let one = g.constant_scalar(1.0, FundamentalType::Float).id;
-            let dp = ids::sub(g, one, ids::mul(g, vec![x, x])?)?;
+            let one = g.scalar(1.0, FundamentalType::Float);
+            let tanh_squared = ids::mul(g, vec![x, x])?;
+            let dp = ids::sub(g, one, tanh_squared)?;
             Ok(vec![(anc, ids::mul(g, vec![dx, dp])?)])
         } else {
             Ok(Vec::new())

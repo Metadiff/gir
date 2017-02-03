@@ -3,62 +3,91 @@ use graph::*;
 use errors::*;
 use ops::interface::default::*;
 use super::super::ids;
-use std::borrow::Borrow;
+use std::ops::DerefMut;
 
-pub fn cast(arg: &Expr, data_type: FundamentalType) -> Result<Expr> {
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::cast(&arg.graph, arg.id, data_type)?
-    })
+pub fn overwrite_update<T: AsRef<Expr>>(arg: T, upd: T) -> Result<()> {
+    let arg = arg.as_ref();
+    let upd = upd.as_ref();
+    same_graph_2(arg, upd)?;
+    ids::overwrite_update(arg.wrapper.get_mut().deref_mut(), arg.id, upd.id)
 }
 
-pub fn broadcast<T: Borrow<Expr>>(arg: T, shape: [Option<&Expr>; 4]) -> Result<Expr> {
+pub fn update<T: AsRef<Expr>>(arg: T, upd: T) -> Result<()> {
+    let arg = arg.as_ref();
+    let upd = upd.as_ref();
+    same_graph_2(arg, upd)?;
+    ids::update(arg.wrapper.get_mut().deref_mut(), arg.id, upd.id)
+}
+
+pub fn cast<T: AsRef<Expr>>(arg: T, data_type: FundamentalType) -> Result<Expr> {
+    let arg = arg.as_ref();
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::cast(g.deref_mut(), arg.id, data_type)?
+    };
+    wrapper.as_expr(result)
+}
+
+pub fn broadcast<T: AsRef<Expr>>(arg: T, shape: [Option<&Expr>; 4]) -> Result<Expr> {
     for opt_e in shape.iter() {
         if let &Some(expr) = opt_e {
-            same_graph_2(arg.borrow(), expr)?;
+            same_graph_2(arg.as_ref(), expr)?;
         }
     }
-    let arg = arg.borrow();
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::broadcast(&arg.graph, arg.id, [
-            shape[0].map(|e| e.borrow().id),
-            shape[1].map(|e| e.borrow().id),
-            shape[2].map(|e| e.borrow().id),
-            shape[3].map(|e| e.borrow().id)
-        ])?})
+    let arg = arg.as_ref();
+    let shape = [
+        shape[0].map(|e| e.as_ref().id),
+        shape[1].map(|e| e.as_ref().id),
+        shape[2].map(|e| e.as_ref().id),
+        shape[3].map(|e| e.as_ref().id)
+    ];
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::broadcast(g.deref_mut(), arg.id, shape)?
+    };
+    wrapper.as_expr(result)
 }
 
-pub fn broadcast_to<T1: Borrow<Expr>, T2: Borrow<Expr>>(arg: T1, to: T2) -> Result<Expr> {
-    let arg = arg.borrow();
-    let to = to.borrow();
+pub fn broadcast_to<T1: AsRef<Expr>, T2: AsRef<Expr>>(arg: T1, to: T2) -> Result<Expr> {
+    let arg = arg.as_ref();
+    let to = to.as_ref();
     same_graph_2(arg, to)?;
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::broadcast_to(&arg.graph, arg.id, to.id)?
-    })
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::broadcast_to(g.deref_mut(), arg.id, to.id)?
+    };
+    wrapper.as_expr(result)
 }
 
-pub fn make_constant<T: Borrow<Expr>>(arg: T) -> Result<Expr> {
-    let arg = arg.borrow();
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::make_constant(&arg.graph, arg.id)?
-    })
+pub fn make_constant<T: AsRef<Expr>>(arg: T) -> Result<Expr> {
+    let arg = arg.as_ref();
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::make_constant(g.deref_mut(), arg.id)?
+    };
+    wrapper.as_expr(result)
 }
 
-pub fn reorder<T: Borrow<Expr>>(arg: T, order: [Axis; 4]) -> Result<Expr> {
-    let arg = arg.borrow();
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::reorder(&arg.graph, arg.id, Some(order))?
-    })
+pub fn reorder<T: AsRef<Expr>>(arg: T, order: [Axis; 4]) -> Result<Expr> {
+    let arg = arg.as_ref();
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::reorder(g.deref_mut(), arg.id, Some(order))?
+    };
+    wrapper.as_expr(result)
 }
 
-pub fn transpose<T: Borrow<Expr>>(arg: T) -> Result<Expr> {
-    let arg = arg.borrow();
-    Ok(Expr {
-        graph: arg.graph.clone(),
-        id: ids::reorder(&arg.graph, arg.id, None)?
-    })
+pub fn transpose<T: AsRef<Expr>>(arg: T) -> Result<Expr> {
+    let arg = arg.as_ref();
+    let ref wrapper = arg.wrapper;
+    let result = {
+        let mut g = wrapper.get_mut();
+        ids::reorder(g.deref_mut(), arg.id, None)?
+    };
+    wrapper.as_expr(result)
 }

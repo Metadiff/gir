@@ -3,8 +3,8 @@ use graph::*;
 use errors::*;
 use api::ids;
 use std::any::Any;
-use std::borrow::Borrow;
-use std::cell::RefCell;
+//use std::borrow::Borrow;
+//use std::cell::RefCell;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperatorMetaData {
@@ -25,7 +25,7 @@ pub struct OperatorMetaData {
 pub trait Operator: ::std::fmt::Debug {
     /// Calculates the derivative of the parent expressions given the derivative
     /// of the current.
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>>;
 
     /// Clones the concrete operator and wraps it in a box again
@@ -39,17 +39,17 @@ pub trait Operator: ::std::fmt::Debug {
     /// Returns the meta data
     fn get_meta(&self) -> &OperatorMetaData;
 
-    fn apply_expr(&self, args: &Vec<Expr>) -> Result<ExprData> {
-        if args.len() == 0 {
-            Err(ErrorKind::InvalidArguments(
-                String::new() + self.get_meta().name, Vec::new(),
-                "apply_expr takes at least 1 argument.".into()).into())
-        } else {
-            self.apply(&args[0].graph, args.iter().map(|x| x.id).collect())
-        }
-    }
+//    fn apply_expr(&self, args: &Vec<Expr>) -> Result<ExprData> {
+//        if args.len() == 0 {
+//            Err(ErrorKind::InvalidArguments(
+//                String::new() + self.get_meta().name, Vec::new(),
+//                "apply_expr takes at least 1 argument.".into()).into())
+//        } else {
+//            self.apply(&args[0].graph, args.iter().map(|x| x.id).collect())
+//        }
+//    }
 
-    fn apply(&self, g: &Graph, args: Vec<usize>) -> Result<ExprData> {
+    fn apply(&self, g: &mut Graph, args: Vec<usize>) -> Result<ExprData> {
         let args = self.verify_args(g, args)?;
         Ok(ExprData{
             id: 0,
@@ -65,7 +65,7 @@ pub trait Operator: ::std::fmt::Debug {
             matrix_symmetry: self.get_matrix_symmetry(g, &args),
             matrix_fill: self.get_matrix_fill(g, &args),
             grad_level: self.get_grad_level(g, &args),
-            scope: "".into(),
+            scope: Vec::new(),
             sym_int: None
         })
     }
@@ -75,7 +75,7 @@ pub trait Operator: ::std::fmt::Debug {
         unimplemented!()
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         default::verify_args(meta, g, args)
     }
@@ -114,7 +114,7 @@ pub trait Operator: ::std::fmt::Debug {
     }
 
     fn get_grad_level(&self, g: &Graph, args: &Vec<usize>) -> usize {
-        args.iter().map(|&x| g.get().nodes[x].grad_level).max().unwrap()
+        args.iter().map(|&x| g.nodes[x].grad_level).max().unwrap()
     }
 }
 
@@ -129,7 +129,7 @@ impl Clone for Box<Operator> {
 pub mod default {
     use super::*;
 
-    pub fn verify_args(meta: &OperatorMetaData, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    pub fn verify_args(meta: &OperatorMetaData, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         // Verify number of arguments
         let l = args.len();
         match meta.arity {
@@ -171,7 +171,11 @@ pub mod default {
         }
         // Verify individual arguments
         for &arg in &args {
-            g.get().nodes.get(arg).ok_or(ErrorKind::InvalidExprAccess(arg))?;
+            let node = g.get_node(arg)?;
+            if node.op.get_meta().name == "Update" {
+                return Err(ErrorKind::Msg("Attempting to use 'Update' \
+                in another operation.".into()).into())
+            }
         }
         Ok(args)
     }
@@ -196,8 +200,8 @@ pub mod default {
         }
     }
 
-    pub fn get_reduction_shape<T: Borrow<[bool; 4]>>(mut shape: Shape, axes: T) -> Shape {
-        let axes = axes.borrow();
+    pub fn get_reduction_shape(mut shape: Shape, axes: &[bool; 4]) -> Shape {
+        let axes = axes.as_ref();
         for &axis in Axis::iter() {
             if axes[axis as usize] {
                 shape.set(axis, 1.into());
@@ -229,7 +233,7 @@ pub mod default {
         }
     }
 
-    pub fn broadcast_shapes(graph: &Graph, name: &str, mut args: Vec<usize>) -> Result<Vec<usize>> {
+    pub fn broadcast_shapes(graph: &mut Graph, name: &str, mut args: Vec<usize>) -> Result<Vec<usize>> {
         let mut shape = graph.get_node(args[0]).unwrap().shape.clone();
         let mut shape_i = [args[0], args[0], args[0], args[0]];
         for &a in args.iter().skip(1) {
@@ -250,7 +254,8 @@ pub mod default {
         }
         // Make sure all arguments are up to that shape, if not broadcast them accordingly
         for a in args.iter_mut() {
-            if shape != graph.get_node(*a).unwrap().shape {
+            if shape != graph.get_node(*a).unwrap().shape  &&
+                graph.get_node(*a).unwrap().shape != Shape::scalar_shape() {
                 let br: Vec<Option<usize>> = Axis::iter().zip(shape_i.iter())
                     .map(|(&axis, &arg_id)| {
                         if shape.get(axis) != graph.get_node(*a).unwrap().shape.get(axis) {
@@ -259,7 +264,7 @@ pub mod default {
                             None
                         }
                     }).collect();
-                match RefCell::borrow(&graph.rc).props.policies.implicit_broadcast {
+                match graph.props.policies.implicit_broadcast {
                     Policy::Quite => {},
                     Policy::Warn => {
                         warn!(graph.log,
@@ -279,44 +284,46 @@ pub mod default {
         Ok(args)
     }
 
-    pub fn same_graph<T: Borrow<Expr>>(exprs: &Vec<T>) -> Result<()> {
+    pub fn same_graph<T: AsRef<Expr>>(exprs: &Vec<T>) -> Result<()> {
         if exprs.len() > 1 {
-            let ref g0 = exprs[0].borrow().graph;
+            let ref g0 = exprs[0].as_ref().wrapper;
             for expr in exprs.iter().skip(1) {
-                if !::std::ptr::eq(&*g0.rc, &*expr.borrow().graph.rc) {
-                    return Err(ErrorKind::NotFromTheSameGraph.into())
+                if !::std::ptr::eq(&*g0.graph, &*expr.as_ref().wrapper.graph) {
+                    return Err(ErrorKind::Msg("Trying to use expressions which are \
+                    not from the same graph.".into()).into())
                 }
             }
         }
         Ok(())
     }
 
-    pub fn same_graph_2<T1: Borrow<Expr>, T2: Borrow<Expr>>(expr0: T1, expr1: T2) -> Result<()> {
-        if !::std::ptr::eq(&*expr0.borrow().graph.rc, &*expr1.borrow().graph.rc) {
-            Err(ErrorKind::NotFromTheSameGraph.into())
+    pub fn same_graph_2<T1: AsRef<Expr>, T2: AsRef<Expr>>(expr0: T1, expr1: T2) -> Result<()> {
+        if !::std::ptr::eq(&*expr0.as_ref().wrapper.graph, &*expr1.as_ref().wrapper.graph) {
+            return Err(ErrorKind::Msg("Trying to use expressions which are \
+                    not from the same graph.".into()).into())
         } else {
             Ok(())
         }
     }
 
     pub fn same_graph_3(expr0: &Expr, expr1: &Expr, expr2: &Expr) -> Result<()> {
-        if !::std::ptr::eq(&*expr0.graph.rc, &*expr1.graph.rc) ||
-            !::std::ptr::eq(&*expr0.graph.rc, &*expr2.graph.rc) {
-            Err(ErrorKind::NotFromTheSameGraph.into())
+        if !::std::ptr::eq(&*expr0.wrapper.graph, &*expr1.wrapper.graph) ||
+            !::std::ptr::eq(&*expr0.wrapper.graph, &*expr2.wrapper.graph) {
+            return Err(ErrorKind::Msg("Trying to use expressions which are \
+                    not from the same graph.".into()).into())
         } else {
             Ok(())
         }
     }
 
     pub fn same_graph_4(expr0: &Expr, expr1: &Expr, expr2: &Expr, expr3: &Expr) -> Result<()> {
-        if !::std::ptr::eq(&*expr0.graph.rc, &*expr1.graph.rc) ||
-            !::std::ptr::eq(&*expr0.graph.rc, &*expr2.graph.rc) ||
-            !::std::ptr::eq(&*expr0.graph.rc, &*expr3.graph.rc) {
-            Err(ErrorKind::NotFromTheSameGraph.into())
+        if !::std::ptr::eq(&*expr0.wrapper.graph, &*expr1.wrapper.graph) ||
+            !::std::ptr::eq(&*expr0.wrapper.graph, &*expr2.wrapper.graph) ||
+            !::std::ptr::eq(&*expr0.wrapper.graph, &*expr3.wrapper.graph) {
+            return Err(ErrorKind::Msg("Trying to use expressions which are \
+                    not from the same graph.".into()).into())
         } else {
             Ok(())
         }
     }
-
-
 }

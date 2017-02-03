@@ -6,29 +6,33 @@ use ops::interface::default::*;
 use api;
 
 use std::collections::HashMap;
-use std::borrow::Borrow;
+//use std::borrow::Borrow;
+use std::convert::AsRef;
+use std::ops::DerefMut;
 
 /// Calculates the gradient of the expression **f** with respect to all of the
 /// expressions in **x** using reverse mode automatic differentiation.
-pub fn gradient<T1: Borrow<Expr>, T2: Borrow<Expr>>(f: T1, x: &Vec<T2>) -> Result<Vec<Expr>> {
-    let f = f.borrow();
-    let ref graph = f.graph;
+pub fn gradient<T1: AsRef<Expr>, T2: AsRef<Expr>>(f: T1, x: &Vec<T2>) -> Result<Vec<Expr>> {
+    let f = f.as_ref();
+    let ref wrapper = f.wrapper;
     if f.get()?.shape.order() != 0 {
         let err = ErrorKind::Msg("Requested gradient of a non scalar function.".into()).into();
-        error!(graph.log, format!("[derivative] {}", err));
+        error!(wrapper.get().log, format!("[derivative] {}", err));
         Err(err)
     } else {
         // Verify all nodes are from the same graph
         for &ref expr in x {
-            let e: &Expr = expr.borrow();
-            if !::std::ptr::eq(&*graph.rc, &*e.graph.rc) {
-                return Err(ErrorKind::NotFromTheSameGraph.into())
+            let e: &Expr = expr.as_ref();
+            if !::std::ptr::eq(&*wrapper.graph, &*e.wrapper.graph) {
+                return Err(ErrorKind::Msg("Trying to use expressions which are \
+                    not from the same graph.".into()).into())
             }
         }
-        let x_id = x.iter().map(|e| e.borrow().id).collect();
+        let x_id = x.iter().map(|e| e.as_ref().id).collect();
         let data_type = f.get()?.data_type;
-        let u = graph.constant_scalar(1.0, data_type).id;
-        reverse_diff(graph, &vec![f.id], &x_id, &vec![u])
+        let u = wrapper.scalar(1.0, data_type).id;
+        let result = reverse_diff(wrapper.get_mut().deref_mut(), &vec![f.id], &x_id, &vec![u])?;
+        Ok(result.into_iter().map(|x| wrapper.as_expr(x).unwrap()).collect())
     }
 }
 
@@ -44,7 +48,9 @@ pub fn reverse_diff_expr(f: &Vec<&Expr>, x: &Vec<&Expr>, u: &Vec<&Expr>) -> Resu
         let f = f.iter().map(|e| e.id).collect();
         let x = x.iter().map(|e| e.id).collect();
         let u = u.iter().map(|e| e.id).collect();
-        reverse_diff(&combined[0].graph, &f, &x, &u)
+        let ref wrapper = combined[0].wrapper;
+        let result = reverse_diff(wrapper.get_mut().deref_mut(), &f, &x, &u)?;
+        Ok(result.into_iter().map(|x| wrapper.as_expr(x).unwrap()).collect())
     }
 }
 
@@ -72,8 +78,8 @@ pub fn reverse_diff_expr(f: &Vec<&Expr>, x: &Vec<&Expr>, u: &Vec<&Expr>) -> Resu
 /// All of the expressions in the three vectors must be part of the same graph. Additionally,
 /// it is required that `f` and `u` have the same length and each individual entries of
 /// the two vectors have the same shape or are broadcastable to each other.
-pub fn reverse_diff(graph: &Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize>)
-                    -> Result<Vec<Expr>> {
+pub fn reverse_diff(graph: &mut Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize>)
+                    -> Result<Vec<usize>> {
     if x.is_empty() {
         // If no parameters then no derivatives
         return Ok(Vec::new())
@@ -85,13 +91,13 @@ pub fn reverse_diff(graph: &Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize
         Err(err)
     } else if f.len() != u.len() {
         // Same number of 'f' and 'u'
-        let err = ErrorKind::InvalidNumberOfProjectionTensors(f.len(), u.len());
+        let err = ErrorKind::Msg(format!("Invalid number of projection tensors - \
+        expected {}, actual - {}.", f.len(), u.len()));
         error!(graph.log, format!("[derivative] {}", err));
         Err(err.into())
     } else {
         // Verify shapes of 'f[i]' and 'u[i]'
         for (&fi, &ui) in f.iter().zip(u.iter()) {
-//        for (ef, eu) in f.iter().zip(u.iter()) {
             if graph.get_node(fi)?.shape != graph.get_node(ui)?.shape {
                 let err = ErrorKind::InvalidShapes(
                     format!("reverse_diff"),
@@ -104,33 +110,33 @@ pub fn reverse_diff(graph: &Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize
 
         trace!(graph.log, "[derivative] Starting reverse_diff.");
         // Flow tree
-        let flow_tree = graph.get().get_flow(x, f);
+        let flow_tree = graph.get_flow(x, f);
         // Derivative messages
         let mut derivatives: HashMap<usize, Vec<usize>> = HashMap::new();
-        let init_grad_level = graph.get().grad_level;
+        let init_grad_level = graph.grad_level;
         let mut grad_level = 0;
-        let (mut min_index, mut max_index) = (0, graph.get().nodes.len());
+        let (mut min_index, mut max_index) = (0, graph.nodes.len());
 
         for (i, (&fi, &ui)) in f.iter().zip(u.iter()).enumerate() {
             debug!(graph.log, "[derivative] Initial derivative at index {} for {} is {}.", i, fi, ui);
             derivatives.insert(fi, vec![ui]);
-            min_index = ::std::cmp::min(min_index, graph.get().order.iter()
+            min_index = ::std::cmp::min(min_index, graph.order.iter()
                 .position(|&x| x == fi).unwrap());
-            max_index = ::std::cmp::max(max_index, graph.get().order.iter()
+            max_index = ::std::cmp::max(max_index, graph.order.iter()
                 .position(|&x| x == fi).unwrap());
-            grad_level = ::std::cmp::max(grad_level, graph.get().nodes[fi].grad_level + 1);
+            grad_level = ::std::cmp::max(grad_level, graph.nodes[fi].grad_level + 1);
         }
         for &xi in x {
-            min_index = ::std::cmp::min(min_index, graph.get().order.iter()
+            min_index = ::std::cmp::min(min_index, graph.order.iter()
                 .position(|&x| x == xi).unwrap());
         }
-
-        let init_scope = graph.get().scope.clone();
-        graph.get_mut().grad_level = grad_level;
-        graph.get_mut().scope = format!("rd{}", grad_level);
+        graph.grad_level = grad_level;
+//        let init_scope = graph.scope.clone();
+//        graph.grad_level = grad_level;
+//        graph.scope = format!("rd{}", grad_level);
 
         // Send derivative message in reverse mode
-        let traversal: Vec<usize> = graph.get().order[min_index..max_index]
+        let traversal: Vec<usize> = graph.order[min_index..max_index]
             .iter().cloned().collect();
         for i in traversal.into_iter().rev().filter(|&x| flow_tree[x]) {
             let pd = derivatives.remove(&i).unwrap_or(Vec::new());
@@ -142,69 +148,55 @@ pub fn reverse_diff(graph: &Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize
             }
             for (a, df_da) in reverse_diff_op(graph, i, pd, &flow_tree)? {
                 derivatives.entry(a).or_insert(Vec::new()).push(df_da);
-//                println!("{}: {:?}", a, derivatives.get(&a));
-//                println!("************************");
-//                println!("{}: {:?}", 3, derivatives.get(&3));
-//                println!("{}: {:?}", 4, derivatives.get(&4));
-//                println!("{}: {:?}", 3, derivatives.get(&3));
-//                println!("{}: {:?}", 4, derivatives.get(&4));
-//                println!("************************");
             }
         }
 
-        // Reset the grad_level
-        graph.get_mut().grad_level = init_grad_level;
 
-        let id = graph.get().props.policies.independent_derivative;
+        let id = graph.props.policies.independent_derivative;
         let mut ut_jf = Vec::with_capacity(x.len());
         for (i, &xi) in x.iter().enumerate()  {
-            println!("{}: {:?}", xi, derivatives.get(&xi));
             let v = derivatives.remove(&xi).unwrap_or(Vec::new());
             match v.len() {
                 0 => match id {
                     Policy::Quite => {
                         let data_type = graph.get_node(xi)?.data_type;
-                        let di = graph.constant_scalar(0.0, data_type);
-                        let old_name = di.get()?.name.clone();
-                        di.get_mut()?.name = format!("{}|rd[{}]", old_name, xi);
+                        let di = graph.scalar(0.0, data_type);
+                        graph.nodes[di].name = format!("{}|rd[{}]", graph.nodes[di].name, xi);
                         ut_jf.push(di);
                     },
                     Policy::Warn => {
-                        let err = ErrorKind::IndependentDerivative(i);
+                        let err = ErrorKind::Msg(
+                            format!("The functions 'f' are independent of the tensor 'x' \
+                            at index {}.", i));
                         warn!(graph.log, format!("[derivative] {}", err));
                         let data_type = graph.get_node(xi)?.data_type;
-                        let di = graph.constant_scalar(0.0, data_type);
-                        let old_name = di.get()?.name.clone();
-                        di.get_mut()?.name = format!("{}|rd[{}]", old_name, xi);
+                        let di = graph.scalar(0.0, data_type);
+                        graph.nodes[di].name = format!("{}|rd[{}]", graph.nodes[di].name, xi);
                         ut_jf.push(di);
                     },
                     Policy::Raise => {
-                        let err = ErrorKind::IndependentDerivative(i);
+                        let err = ErrorKind::Msg(
+                            format!("The functions 'f' are independent of the tensor 'x' \
+                            at index {}.", i));
                         error!(graph.log, format!("[derivative] {}", err));
                         return Err(err.into())
                     },
                 },
                 1 => {
                     let id = v[0];
-                    let old_name = graph.get_node(id)?.name.clone();
-                    graph.get_node_mut(id)?.name = format!("{}|rd[{}]", old_name, xi);
-                    ut_jf.push(Expr{
-                        graph: graph.clone(),
-                        id: id
-                    });
+                    graph.nodes[id].name = format!("{}|rd[{}]", graph.nodes[id].name, xi);
+                    ut_jf.push(id);
                 },
                 _ => {
                     let id = api::ids::add(graph, v)?;
-                    let old_name = graph.get_node(id)?.name.clone();
-                    graph.get_node_mut(id)?.name = format!("{}|rd[{}]", old_name, xi);
-                    ut_jf.push(Expr{
-                        graph: graph.clone(),
-                        id: id
-                    });
+                    graph.nodes[id].name = format!("{}|rd[{}]", graph.nodes[id].name, xi);
+                    ut_jf.push(id);
                 }
             }
         };
-        graph.get_mut().scope = init_scope;
+        // Reset the grad_level
+        graph.grad_level = init_grad_level;
+//        graph.scope = init_scope;
         trace!(graph.log, "[derivative] Fished reverse_diff.");
         Ok(ut_jf)
     }
@@ -225,7 +217,7 @@ pub fn reverse_diff(graph: &Graph, f: &Vec<usize>, x: &Vec<usize>, u: &Vec<usize
 /// * `dx` - a vector of symbolic expressions defining all derivatives of **f** coming
 /// from the children of **x**
 /// * `flow_tree` - a boolean mask specifying which nodes will be needed
-pub fn reverse_diff_op<'a>(graph: &Graph, x: usize, dx: Vec<usize>, flow_tree: &Vec<bool>)
+pub fn reverse_diff_op<'a>(graph: &mut Graph, x: usize, dx: Vec<usize>, flow_tree: &Vec<bool>)
                            -> Result<Vec<(usize, usize)>> {
     // The derivative of the node is 0 so no messages to parents
     if dx.len() == 0 {
@@ -234,7 +226,7 @@ pub fn reverse_diff_op<'a>(graph: &Graph, x: usize, dx: Vec<usize>, flow_tree: &
 
     // This is needed because operators like Add and Mul can have any number of parents
     let diff_parents = {
-        let ref n = graph.get().nodes[x];
+        let ref n = graph.nodes[x];
         match n.op.get_meta().differential_parents {
             ::std::usize::MAX => n.ancestors.len(),
             v => v
@@ -245,16 +237,7 @@ pub fn reverse_diff_op<'a>(graph: &Graph, x: usize, dx: Vec<usize>, flow_tree: &
         return Ok(Vec::new())
     }
 
-    let init_scope = graph.get().scope.clone();
-    let new_scope = if graph.get().nodes[x].scope == "" {
-        format!("rd{}", graph.get().grad_level)
-    } else {
-        format!("rd{}{}{}",
-                graph.get().grad_level,
-                graph.get().props.scope_delimiter,
-                graph.get().nodes[x].scope)
-    };
-    graph.get_mut().scope = new_scope;
+    graph.scope.insert(0, format!("rd{}", graph.grad_level));
 
     // If more than one derivative incoming the total derivative is the sum
     let dx = match dx.len() {
@@ -262,19 +245,16 @@ pub fn reverse_diff_op<'a>(graph: &Graph, x: usize, dx: Vec<usize>, flow_tree: &
         _ => api::ids::add(graph, dx)?
     };
     debug!(graph.log, "[derivative] Derivative of {} is {}.", x, dx);
-
-    let old_name = graph.get().nodes[dx].name.clone();
-    graph.get_mut().nodes[dx].name = format!("{}|rd[{}]", old_name, x);
-
-    let op = graph.get().nodes[x].op.clone();
+    graph.nodes[dx].name = format!("{}|rd[{}]", graph.nodes[dx].name, x);
+    let op = graph.nodes[x].op.clone();
 
     let parent_derivatives = op.reverse_diff(graph, x, dx, flow_tree)?;
     for &(ref p, ref pd) in &parent_derivatives {
-        let old_name = graph.get().nodes[*pd].name.clone();
-        graph.get_mut().nodes[*pd].name = format!("{}|rd[{}->{}]", old_name, x, p);
+        let old_name = graph.nodes[*pd].name.clone();
+        graph.nodes[*pd].name = format!("{}|rd[{}->{}]", old_name, x, p);
         debug!(graph.log, "[derivative] Sending rd {} from {} to {}.", pd, x, p);
     }
-    graph.get_mut().scope = init_scope;
+    graph.scope.remove(0);
 
     Ok(parent_derivatives)
 }

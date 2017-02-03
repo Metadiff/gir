@@ -10,14 +10,14 @@ pub struct Add {}
 
 impl Operator for Add {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         Ok(g.get_node(x)?.ancestors.iter()
             .filter(|id| flow_tree[**id])
             .map(|id| (*id, dx)).collect())
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         Ok(default::broadcast_shapes(g, meta.name, args)?)
@@ -52,7 +52,7 @@ pub struct Neg {}
 
 impl Operator for Neg {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
@@ -62,7 +62,7 @@ impl Operator for Neg {
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         if g.get_node(args[0])?.data_type == FundamentalType::Boolean {
@@ -101,7 +101,7 @@ pub struct Mul {}
 
 impl Operator for Mul {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let n = g.get_node(x)?.ancestors.len();
         match n {
@@ -123,7 +123,7 @@ impl Operator for Mul {
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         Ok(default::broadcast_shapes(g, meta.name, args)?)
@@ -157,18 +157,19 @@ pub struct Div {}
 
 impl Operator for Div {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
-            let minus_one = g.constant_scalar(-1.0, g.get_node(x)?.data_type).id;
+            let data_type = g.get_node(x)?.data_type;
+            let minus_one = g.scalar(-1.0, data_type);
             Ok(vec![(ancestor, ids::mul(g, vec![dx, x, x, minus_one])?)])
         } else {
             Ok(Vec::new())
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         if g.get_node(args[0])?.data_type == FundamentalType::Boolean {

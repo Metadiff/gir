@@ -2,15 +2,15 @@ use graph::*;
 use std::io::Write as W;
 use tera::Tera;
 
-pub fn to_cytoscape_html(io: &mut W, graph: &Graph) -> ::std::io::Result<()>  {
+pub fn to_cytoscape_html(io: &mut W, g: &Graph) -> ::std::io::Result<()>  {
     let mut t = compile_templates!("templates/*");
     t.autoescape_on(vec!["html", ".sql"]);
     let mut edges: Vec<(usize, usize, usize)> = Vec::new();
     let mut nodes: Vec<String> = Vec::new();
-    let g = graph.get();
+    let ref sep = g.props.scope_delimiter;
     for ref expr in &g.nodes {
         let mut s = String::new();
-        expr_to_cytoscape(&mut s, &expr).unwrap();
+        expr_to_cytoscape(&mut s, &expr, sep).unwrap();
         nodes.push(s);
         for (i, &anc) in expr.ancestors.iter().enumerate() {
             edges.push((anc, expr.id, i));
@@ -35,7 +35,7 @@ pub fn to_cytoscape_html(io: &mut W, graph: &Graph) -> ::std::io::Result<()>  {
 }
 
 use std::fmt::Write;
-pub fn expr_to_cytoscape(io: &mut String, expr: &ExprData) -> ::std::fmt::Result  {
+pub fn expr_to_cytoscape(io: &mut String, expr: &ExprData, sep: &str) -> ::std::fmt::Result  {
     write!(io, "id: 'n{}',\n\t\t\t\t\t\t\
     label: '{}[{}]',\n\t\t\t\t\t\t\
     parent: '{}',\n\t\t\t\t\t\t\
@@ -49,7 +49,7 @@ pub fn expr_to_cytoscape(io: &mut String, expr: &ExprData) -> ::std::fmt::Result
     Children: '{:?}'",
            expr.id,
            expr.op.get_meta().name, expr.id,
-           expr.scope,
+           expr.scope.join(sep),
            expr.name, expr.id,
            expr.data_type,
            expr.shape,

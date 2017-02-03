@@ -13,9 +13,9 @@ pub struct Input {
 
 impl Operator for Input {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
-        unimplemented!()
+        Ok(Vec::new())
     }
 
     fn apply_null(&self) -> ExprData {
@@ -33,7 +33,7 @@ impl Operator for Input {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into(),
+            scope: Vec::new(),
             sym_int: None
         }
     }
@@ -90,9 +90,9 @@ pub struct Parameter {
 
 impl Operator for Parameter {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
-        unimplemented!()
+        Ok(Vec::new())
     }
 
     fn apply_null(&self) -> ExprData {
@@ -110,7 +110,7 @@ impl Operator for Parameter {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into(),
+            scope: Vec::new(),
             sym_int: None
         }
     }
@@ -166,15 +166,15 @@ pub struct Scalar {
 
 impl Operator for Scalar {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
-        unimplemented!()
+        Ok(Vec::new())
     }
 
     fn apply_null(&self) -> ExprData {
         ExprData{
             id: 0,
-            name: "".into(),
+            name: "Scalar".into(),
             ancestors: Vec::new(),
             children: Vec::new(),
             op: self.clone_box(),
@@ -186,7 +186,7 @@ impl Operator for Scalar {
             matrix_symmetry: MatrixSymmetry::NonSymmetric,
             matrix_fill: MatrixFill::NonStructuredFill,
             grad_level: 0,
-            scope: "".into(),
+            scope: Vec::new(),
             sym_int: None
         }
     }
@@ -229,9 +229,9 @@ pub struct SymIntInput {
 
 impl Operator for SymIntInput {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
-        unimplemented!()
+        Ok(Vec::new())
     }
 
     fn apply_null(&self) -> ExprData {
@@ -249,7 +249,7 @@ impl Operator for SymIntInput {
             matrix_symmetry: MatrixSymmetry::Symmetric,
             matrix_fill: MatrixFill::Diagonal,
             grad_level: 0,
-            scope: "".into(),
+            scope: Vec::new(),
             sym_int: Some(variable(self.identifier.clone()))
         }
     }

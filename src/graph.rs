@@ -2,6 +2,7 @@ use primitives::*;
 use props::*;
 use ops::*;
 use errors::*;
+use api::ids;
 
 use std::boxed::Box;
 use std::collections::{HashMap, VecDeque};
@@ -9,6 +10,7 @@ use std::cell::{Ref, RefMut, RefCell};
 use slog::{Logger, DrainExt};
 use slog_term;
 use std::rc::Rc;
+use std::convert::AsRef;
 
 
 #[derive(Debug, Clone)]
@@ -26,93 +28,87 @@ pub struct ExprData{
     pub matrix_symmetry: MatrixSymmetry,
     pub matrix_fill: MatrixFill,
     pub grad_level: usize,
-    pub scope: String,
+    pub scope: Vec<String>,
     pub sym_int: Option<SymInt>
 }
 
+
 #[derive(Debug, Clone)]
 pub struct Expr {
-    pub graph: Graph,
+    pub wrapper: GraphWrapper,
     pub id: usize
+}
+
+impl AsRef<Expr> for Expr{
+    fn as_ref(&self) -> &Self {
+        self
+    }
 }
 
 impl Expr {
     pub fn get(&self) -> Result<Ref<ExprData>> {
-        self.graph.get_node(self.id)
-        //        if self.graph.get().nodes.get(self.id).is_none() {
-        //            Err(ErrorKind::InvalidExprAccess(self.id).into())
-        //        }  else {
-        //            Ok(Ref::map(self.graph.get(), |d|
-        //                d.nodes.get(self.id).unwrap()))
-        //        }
+        self.wrapper.get_node(self.id)
     }
 
     pub fn get_mut(&self) -> Result<RefMut<ExprData>> {
-        self.graph.get_node_mut(self.id)
-        //        if self.graph.rc.borrow().nodes.get(self.id).is_none() {
-        //            Err(ErrorKind::InvalidExprAccess(self.id).into())
-        //        }  else {
-        //            Ok(RefMut::map(self.graph.get_mut(), |d|
-        //                d.nodes.get_mut(self.id).unwrap()))
-        //        }
+        self.wrapper.get_node_mut(self.id)
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct GraphData {
+#[derive(Debug, Clone)]
+pub struct Graph {
     pub nodes: Vec<ExprData>,
     pub order: Vec<usize>,
     pub props: GraphProperties,
     pub grad_level: usize,
-    pub updates: Vec<(usize, usize)>,
-    pub scope: String,
-    pub scope_map: HashMap<String, Vec<usize>>,
-    pub op_map: HashMap<String, Vec<usize>>
+    pub scope: Vec<String>,
+    pub op_map: HashMap<String, Vec<usize>>,
+    pub updates: HashMap<usize, usize>,
+    pub log: Logger,
 }
 
-impl GraphData {
-    pub fn get_descendants(&self, roots: &Vec<usize>) -> Vec<bool> {
-        let mut mask : Vec<bool> = vec![false; self.nodes.len()];
+impl Default for Graph {
+    fn default() -> Self {
+        Graph::new(Logger::root(slog_term::streamer().full().build().fuse(), o!()))
+    }
+}
 
-        let mut fifo = VecDeque::with_capacity(roots.len());
-        for &r in roots {
-            mask[r] = true;
-            fifo.push_back(r);
+impl Graph {
+    pub fn new(log: Logger) -> Self {
+        Graph {
+            nodes: Vec::new(),
+            order: Vec::new(),
+            props: GraphProperties::default(),
+            grad_level: 0,
+            scope: Vec::new(),
+            op_map: HashMap::new(),
+            updates: HashMap::new(),
+            log: log
         }
-
-        while !fifo.is_empty() {
-            let id = fifo.pop_front().unwrap();
-            for &child in self.nodes[id].children.iter() {
-                if !mask[child] {
-                    mask[child] = true;
-                    fifo.push_back(child);
-                }
-            }
-        }
-
-        return mask;
     }
 
-    pub fn get_ancestors(&self, leafs: &Vec<usize>) -> Vec<bool> {
-        let mut mask : Vec<bool> = vec![false; self.nodes.len()];
+    pub fn scope_str(&self) -> String {
+        let ref sep = self.props.scope_delimiter;
+        self.scope.join(&sep)
+    }
 
-        let mut fifo = VecDeque::with_capacity(leafs.len());
-        for &l in leafs {
-            mask[l] = true;
-            fifo.push_back(l);
-        }
+    pub fn name_in_scope(&self, name: &str) -> String {
+        let ref sep = self.props.scope_delimiter;
+        let joined = self.scope.join(&sep);
+        format!("{}{}{}", joined, sep, name)
+    }
 
-        while !fifo.is_empty() {
-            let id = fifo.pop_front().unwrap();
-            for &ancestor in self.nodes[id].ancestors.iter() {
-                if !mask[ancestor] {
-                    mask[ancestor] = true;
-                    fifo.push_back(ancestor);
-                }
-            }
-        }
+    pub fn get_node(&self, index: usize) -> Result<&ExprData> {
+        self.nodes.get(index).ok_or(ErrorKind::InvalidExprAccess(index).into())
+    }
 
-        return mask;
+    pub fn get_node_mut(&mut self, index: usize) -> Result<&mut ExprData> {
+        self.nodes.get_mut(index).ok_or(ErrorKind::InvalidExprAccess(index).into())
+    }
+
+    pub fn apply_op(&mut self, op: Box<Operator>, args: Vec<usize>) -> Result<usize> {
+        let data = op.apply(self, args)?;
+        Ok(self.add_node(data)?)
     }
 
     pub fn add_node(&mut self, mut data: ExprData) -> Result<usize> {
@@ -130,12 +126,6 @@ impl GraphData {
                 self.op_map.insert(String::new() + data.op.get_meta().name, vec![data.id]);
             } else {
                 self.op_map.get_mut(data.op.get_meta().name).unwrap().push(data.id);
-            }
-            // Insert into scope_map
-            if !self.op_map.contains_key(&self.scope) {
-                self.op_map.insert(self.scope.clone(), vec![data.id]);
-            } else {
-                self.op_map.get_mut(&self.scope).unwrap().push(data.id);
             }
             // Insert into order
             self.order.push(data.id);
@@ -159,7 +149,9 @@ impl GraphData {
                             let (_, _, v_name) = *self.nodes[id].op.get_args().unwrap()
                                 .downcast::<(FundamentalType, Shape, String)>().unwrap();
                             if name == v_name {
-                                return Err(ErrorKind::ParameterAlreadyExists(name).into())
+                                return Err(ErrorKind::Msg(
+                                    format!("The parameter '{}' already exists \
+                                    in the graph.", name)).into())
                             }
                         }
                     }
@@ -221,6 +213,50 @@ impl GraphData {
         Ok(None)
     }
 
+    pub fn get_descendants(&self, roots: &Vec<usize>) -> Vec<bool> {
+        let mut mask : Vec<bool> = vec![false; self.nodes.len()];
+
+        let mut fifo = VecDeque::with_capacity(roots.len());
+        for &r in roots {
+            mask[r] = true;
+            fifo.push_back(r);
+        }
+
+        while !fifo.is_empty() {
+            let id = fifo.pop_front().unwrap();
+            for &child in self.nodes[id].children.iter() {
+                if !mask[child] {
+                    mask[child] = true;
+                    fifo.push_back(child);
+                }
+            }
+        }
+
+        return mask;
+    }
+
+    pub fn get_ancestors(&self, leafs: &Vec<usize>) -> Vec<bool> {
+        let mut mask : Vec<bool> = vec![false; self.nodes.len()];
+
+        let mut fifo = VecDeque::with_capacity(leafs.len());
+        for &l in leafs {
+            mask[l] = true;
+            fifo.push_back(l);
+        }
+
+        while !fifo.is_empty() {
+            let id = fifo.pop_front().unwrap();
+            for &ancestor in self.nodes[id].ancestors.iter() {
+                if !mask[ancestor] {
+                    mask[ancestor] = true;
+                    fifo.push_back(ancestor);
+                }
+            }
+        }
+
+        return mask;
+    }
+
     pub fn get_flow(&self, roots: &Vec<usize>, leafs: &Vec<usize>) -> Vec<bool> {
         let descendants = self.get_descendants(roots);
         let ancestors = self.get_ancestors(leafs);
@@ -229,214 +265,148 @@ impl GraphData {
             .map(|(r, l)| r && l).collect()
     }
 
-    pub fn constant_scalar(&mut self, value: f64, data_type: FundamentalType) -> Result<usize> {
+    pub fn scalar(&mut self, value: f64, data_type: FundamentalType) -> usize {
         let op = Box::new(Scalar{
             value: value,
             data_type: data_type,
         });
-
-        // Maybe make these wi
-        let mut new_expr = op.apply_null();
-        new_expr.name = "Scalar".into();
-        self.add_node(new_expr)
+        // This can not fail
+        self.add_node(op.apply_null()).unwrap()
     }
 
-    pub fn input(&mut self, data_type: FundamentalType, shape: Shape, name: String) -> Result<usize> {
+    pub fn input(&mut self, data_type: FundamentalType, shape: Shape, name: Option<String>) -> usize {
         let op = Box::new(Input{
             data_type: data_type,
             shape: shape
         });
         let mut new_expr = op.apply_null();
-        new_expr.name = self.scope.clone() + &self.props.scope_delimiter + &name;
-        self.add_node(new_expr)
+        new_expr.name = self.name_in_scope(&name.unwrap_or("_anonymous_".into()));
+        self.add_node(new_expr).unwrap()
     }
 
     pub fn parameter(&mut self,  data_type: FundamentalType, shape: Shape, name: String) -> Result<usize> {
         let op = Box::new(Parameter{
-            param_name: self.scope.clone() + &self.props.scope_delimiter + &name,
+            param_name: self.name_in_scope(&name),
             data_type: data_type,
             shape: shape
         });
-        let mut new_expr = op.apply_null();
-        new_expr.name = self.scope.clone() + &self.props.scope_delimiter + &name;
-        self.add_node(new_expr)
+        self.add_node(op.apply_null())
+    }
+
+    pub fn copy_into(&self, graph: &mut Graph,
+                     mask: &[bool],
+                     provided: Option<HashMap<usize, usize>>,
+                     discard_updates: bool)
+                     -> Result<HashMap<usize, usize>> {
+        let mut provided = provided.unwrap_or(HashMap::new());
+        let init_scope = graph.scope.clone();
+        for &id in self.order.iter().filter(|&&x| mask[x]) {
+            if provided.get(&id).is_none() {
+                let node: &ExprData = self.nodes.get(id).unwrap();
+                let op = node.op.clone();
+                graph.scope = self.nodes[id].scope.clone();
+                let new_id = match op.get_meta().name {
+                    "Input" | "Parameter" | "Scalar" => {
+                        graph.add_node(op.apply_null())?
+                    },
+                    _ => {
+                        let mut ancestors: Vec<usize> = Vec::with_capacity(node.ancestors.len());
+                        for &a in &node.ancestors {
+                            let &v = provided.get(&a).ok_or(ErrorKind::Msg(
+                                format!("Unexpected error in copy_into for node {}.", a)))?;
+                            ancestors.push(v);
+                        }
+                        let data = op.apply(graph, ancestors)?;
+                        graph.add_node(data)?
+                    }
+                };
+                provided.insert(id, new_id);
+            }
+        }
+        graph.scope = init_scope;
+        if ! discard_updates {
+            for (a, u) in self.updates.iter() {
+                let ap = provided.get(a).ok_or(ErrorKind::Msg(
+                    format!("The argument {} needed for updates is not provided.", a)))?;
+                let up = provided.get(a).ok_or(ErrorKind::Msg(
+                    format!("The argument {} needed for updates is not provided.", u)))?;
+                ids::update(graph, *ap, *up)?;
+            }
+        }
+        Ok(provided)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Graph {
-    pub rc: Rc<RefCell<GraphData>>,
-    pub log: Rc<::slog::Logger>,
+#[derive(Debug, Clone, Default)]
+pub struct GraphWrapper {
+    pub graph: Rc<RefCell<Graph>>
 }
 
-impl Default for Graph {
-    fn default() -> Self {
-        Graph::new(Logger::root(slog_term::streamer().full().build().fuse(), o!()))
-    }
-}
+pub type MutGraph<'a> = RefMut<'a, Graph>;
 
-impl Graph {
-    pub fn new(logger: Logger) -> Self {
-        Graph {
-            rc: Rc::new(RefCell::new(GraphData::default())),
-            log: Rc::new(logger),
+impl GraphWrapper {
+    pub fn new(log: Logger) -> Self {
+        GraphWrapper {
+            graph: Rc::new(RefCell::new(Graph::new(log)))
         }
     }
 
-    pub fn get(&self) -> Ref<GraphData> {
-        self.rc.borrow()
+    pub fn get(&self) -> Ref<Graph> {
+        Ref::map(self.graph.borrow(), |x| x)
     }
 
-    pub fn get_mut(&self) -> RefMut<GraphData> {
-        self.rc.borrow_mut()
+    pub fn get_mut(&self) -> RefMut<Graph> {
+        RefMut::map(self.graph.borrow_mut(), |d| d)
     }
 
     pub fn get_node(&self, id: usize) -> Result<Ref<ExprData>> {
-        if self.rc.borrow().nodes.get(id).is_some() {
-            Ok(Ref::map(self.rc.borrow(), |d| d.nodes.get(id).unwrap()))
+        if self.graph.borrow().nodes.get(id).is_some() {
+            Ok(Ref::map(self.graph.borrow(), |d| d.nodes.get(id).unwrap()))
         } else {
             Err(ErrorKind::InvalidExprAccess(id).into())
         }
     }
 
     pub fn get_node_mut(&self, id: usize) -> Result<RefMut<ExprData>> {
-        if self.rc.borrow().nodes.get(id).is_some() {
-            Ok(RefMut::map(self.rc.borrow_mut(), |d| d.nodes.get_mut(id).unwrap()))
+        if self.graph.borrow().nodes.get(id).is_some() {
+            Ok(RefMut::map(self.graph.borrow_mut(), |d| d.nodes.get_mut(id).unwrap()))
         } else {
             Err(ErrorKind::InvalidExprAccess(id).into())
         }
     }
 
-    pub fn to_expr(&self, id: usize) -> Result<Expr> {
-        match self.rc.borrow().nodes.get(id) {
-            Some(_) => Ok(Expr{graph: self.clone(), id:id }),
+    pub fn as_expr(&self, id: usize) -> Result<Expr> {
+        match self.get().nodes.get(id) {
+            Some(_) => Ok(Expr{wrapper: self.clone(), id:id }),
             None => Err(ErrorKind::InvalidExprAccess(id).into())
         }
     }
 
-    pub fn to_exprs(&self, ids: &Vec<usize>) -> Result<Vec<Expr>> {
+    pub fn as_exprs(&self, ids: &[usize]) -> Result<Vec<Expr>> {
         let mut exprs = Vec::new();
         for &id in ids {
-            match self.rc.borrow().nodes.get(id) {
-                Some(_) => {exprs.push(Expr{graph: self.clone(), id:id });},
+            match self.get().nodes.get(id) {
+                Some(_) => {exprs.push(Expr{wrapper: self.clone(), id:id });},
                 None => return Err(ErrorKind::InvalidExprAccess(id).into())
             }
         }
         Ok(exprs)
     }
 
-    pub fn apply_op(&self, op: Box<Operator>, exprs: Vec<usize>) -> Result<usize> {
-        let data = op.apply(self, exprs)?;
-        Ok(self.get_mut().add_node(data)?)
-    }
-
-    pub fn apply_op_expr(&self, op: Box<Operator>, exprs: &Vec<Expr>) -> Result<Expr> {
-        Ok(Expr{
-            graph: self.clone(),
-            id: self.apply_op(op, exprs.iter().map(|x| x.id).collect())?
-        })
-    }
-
-    pub fn constant_scalar(&self, value: f64, data_type: FundamentalType) -> Expr {
+    pub fn scalar(&self, value: f64, data_type: FundamentalType) -> Expr {
         // This can not fail
-        Expr {
-            graph: self.clone(),
-            id: self.rc.borrow_mut().constant_scalar(value, data_type).unwrap()
-        }
+        let x = self.get_mut().scalar(value, data_type);
+        self.as_expr(x).unwrap()
     }
 
     pub fn input(&self, data_type: FundamentalType, shape: Shape, name: Option<String>) -> Expr {
         // This can not fail
-        Expr {
-            graph: self.clone(),
-            id: self.rc.borrow_mut().input(data_type, shape, name.unwrap_or("Input".into())).unwrap()
-        }
+        let x = self.get_mut().input(data_type, shape, name);
+        self.as_expr(x).unwrap()
     }
 
     pub fn parameter(&self, data_type: FundamentalType, shape: Shape, name: String) -> Result<Expr> {
-        Ok(Expr {
-            graph: self.clone(),
-            id: self.rc.borrow_mut().parameter(data_type, shape, name)?
-        })
-    }
-
-    pub fn b_scalar(&self, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Boolean, Shape::scalar_shape(), name)
-    }
-
-    pub fn u_scalar(&self, name: Option<String>) -> Expr {
-        self.input(FundamentalType::UnsignedInt, Shape::scalar_shape(), name)
-    }
-
-    pub fn i_scalar(&self, name: Option<String>) -> Expr {
-        self.input(FundamentalType::SignedInt, Shape::scalar_shape(), name)
-    }
-
-    pub fn f_scalar(&self, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Float, Shape::scalar_shape(), name)
-    }
-
-    pub fn b_vector(&self, dim0: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Boolean, Shape::vector_shape(dim0), name)
-    }
-
-    pub fn u_vector(&self, dim0: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::UnsignedInt, Shape::vector_shape(dim0), name)
-    }
-
-    pub fn i_vector(&self, dim0: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::SignedInt, Shape::vector_shape(dim0), name)
-    }
-
-    pub fn f_vector(&self, dim0: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Float, Shape::vector_shape(dim0), name)
-    }
-
-    pub fn b_matrix(&self, dim0: Dim, dim1: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Boolean, Shape::matrix_shape(dim0, dim1), name)
-    }
-
-    pub fn u_matrix(&self, dim0: Dim, dim1: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::UnsignedInt, Shape::matrix_shape(dim0, dim1), name)
-    }
-
-    pub fn i_matrix(&self, dim0: Dim, dim1: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::SignedInt, Shape::matrix_shape(dim0, dim1), name)
-    }
-
-    pub fn f_matrix(&self, dim0: Dim, dim1: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Float, Shape::matrix_shape(dim0, dim1), name)
-    }
-
-    pub fn b_tensor3(&self, dim0: Dim, dim1: Dim, dim2: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Boolean, Shape::tensor3_shape(dim0, dim1, dim2), name)
-    }
-
-    pub fn u_tensor3(&self, dim0: Dim, dim1: Dim, dim2: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::UnsignedInt, Shape::tensor3_shape(dim0, dim1, dim2), name)
-    }
-
-    pub fn i_tensor3(&self, dim0: Dim, dim1: Dim, dim2: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::SignedInt, Shape::tensor3_shape(dim0, dim1, dim2), name)
-    }
-
-    pub fn f_tensor3(&self, dim0: Dim, dim1: Dim, dim2: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Float, Shape::tensor3_shape(dim0, dim1, dim2), name)
-    }
-
-    pub fn b_tensor4(&self, dim0: Dim, dim1: Dim, dim2: Dim, dim3: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Boolean, Shape::tensor4_shape(dim0, dim1, dim2, dim3), name)
-    }
-
-    pub fn u_tensor4(&self, dim0: Dim, dim1: Dim, dim2: Dim, dim3: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::UnsignedInt, Shape::tensor4_shape(dim0, dim1, dim2, dim3), name)
-    }
-
-    pub fn i_tensor4(&self, dim0: Dim, dim1: Dim, dim2: Dim, dim3: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::SignedInt, Shape::tensor4_shape(dim0, dim1, dim2, dim3), name)
-    }
-
-    pub fn f_tensor4(&self, dim0: Dim, dim1: Dim, dim2: Dim, dim3: Dim, name: Option<String>) -> Expr {
-        self.input(FundamentalType::Float, Shape::tensor4_shape(dim0, dim1, dim2, dim3), name)
+        let x = self.get_mut().parameter(data_type, shape, name)?;
+        self.as_expr(x)
     }
 }

@@ -4,11 +4,61 @@ use graph::*;
 use errors::*;
 use api::ids;
 
-pub fn cast(graph: &Graph, arg: usize, data_type: FundamentalType) -> Result<usize> {
+pub fn overwrite_update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> {
+    graph.updates.remove(&arg);
+    update(graph, arg, upd)
+//    let candidates = graph.get_node(arg)?.children.clone();
+//    let mut old_update = None;
+//    for &c in &candidates {
+//        let node = graph.get_node(c)?;
+//        if node.op.get_meta().name == "Update" {
+//            old_update = Some((c, node.ancestors[1]));
+//            break;
+//        }
+//    }
+//    if let Some((c, prev_upd)) = old_update {
+//        // Remove from arg
+//        {
+//            let mut node = graph.get_node_mut(arg).unwrap();
+//            let pos = node.children.iter().position(|&x| x == c).unwrap();
+//            node.children.remove(pos);
+//        }
+//        // Remove from previous upd
+//        {
+//            let mut node = graph.get_node_mut(prev_upd).unwrap();
+//            let pos = node.children.iter().position(|&x| x == c).unwrap();
+//            node.children.remove(pos);
+//        }
+//        // Remove from op_map
+//        let new_updates = graph.op_map.get("Update").unwrap()
+//            .iter().cloned().filter(|&x| x != c).collect();
+//        graph.op_map.insert("Update".into(), new_updates);
+//    }
+}
+
+pub fn update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> {
+    // Verify first argument is a Parameter
+    if graph.get_node(arg)?.op.get_meta().name != "Parameter" {
+        return Err(ErrorKind::InvalidArguments(
+            "Update".into(), vec![arg, upd],
+            "First argument must be a parameter.".into()).into())
+    }
+    // Verify that the first argument does not already have an Update
+    if let Some(u) = graph.updates.get(&arg) {
+        let ref param_name = graph.nodes[arg].name;
+        return Err(ErrorKind::InvalidArguments(
+            "Update".into(), vec![arg, upd],
+            format!("The parameter '{}' already has an update - {}.", param_name, u)).into())
+    }
+    graph.updates.insert(arg, upd);
+    Ok(())
+}
+
+pub fn cast(graph: &mut Graph, arg: usize, data_type: FundamentalType) -> Result<usize> {
     Ok(graph.apply_op(Box::new(Cast {data_type: data_type}), vec![arg])?)
 }
 
-pub fn broadcast(graph: &Graph, arg: usize, shape: [Option<usize>; 4]) -> Result<usize> {
+pub fn broadcast(graph: &mut Graph, arg: usize, shape: [Option<usize>; 4]) -> Result<usize> {
     let shape_arg = graph.get_node(arg)?.shape.clone();
     let mut args = vec![arg];
     let mut axes = [false; 4];
@@ -27,7 +77,7 @@ pub fn broadcast(graph: &Graph, arg: usize, shape: [Option<usize>; 4]) -> Result
     }
 }
 
-pub fn broadcast_to(graph: &Graph, arg: usize, to: usize) -> Result<usize> {
+pub fn broadcast_to(graph: &mut Graph, arg: usize, to: usize) -> Result<usize> {
     let arg_shape = graph.get_node(arg).unwrap().shape.clone();
     if arg_shape != graph.get_node(to).unwrap().shape {
         let mut broadcast_shape = [None; 4];
@@ -42,12 +92,12 @@ pub fn broadcast_to(graph: &Graph, arg: usize, to: usize) -> Result<usize> {
     }
 }
 
-pub fn make_constant(graph: &Graph, arg: usize) -> Result<usize> {
+pub fn make_constant(graph: &mut Graph, arg: usize) -> Result<usize> {
     Ok(graph.apply_op(Box::new(MakeConstant {}), vec![arg])?)
 }
 
 /// Reverses the axes if order is None (e.g. transpose)
-pub fn reorder(graph: &Graph, arg: usize, order: Option<[Axis; 4]>) -> Result<usize> {
+pub fn reorder(graph: &mut Graph, arg: usize, order: Option<[Axis; 4]>) -> Result<usize> {
     match order {
         Some(o) => Ok(graph.apply_op(Box::new(Reorder {order: o}), vec![arg])?),
         None => {

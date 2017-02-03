@@ -3,7 +3,7 @@ use ops::*;
 use graph::*;
 use errors::*;
 
-pub fn sum(graph: &Graph, arg: usize, mut axes: [bool; 4]) -> Result<usize> {
+pub fn sum(graph: &mut Graph, arg: usize, mut axes: [bool; 4]) -> Result<usize> {
     // Eliminate any unit shapes
     for &axis in Axis::iter() {
         if axes[axis as usize] && *graph.get_node(arg)?.shape.get(axis) == 1 {

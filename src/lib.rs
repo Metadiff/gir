@@ -12,6 +12,7 @@ pub mod primitives;
 pub mod errors;
 pub mod props;
 pub mod graph;
+pub mod function;
 pub mod ops;
 pub mod api;
 pub mod derivative;
@@ -19,4 +20,4 @@ pub mod utils;
 pub mod export;
 
 pub use primitives::*;
-pub use graph::Graph;
+pub use graph::*;

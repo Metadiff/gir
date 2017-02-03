@@ -5,13 +5,70 @@ use errors::*;
 use api::*;
 use std::any::Any;
 
+//#[derive(Debug, Clone)]
+//pub struct Update {}
+//
+//impl Operator for Update {
+//    #[allow(unused_variables, unused_mut)]
+//    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+//                    -> Result<Vec<(usize, usize)>> {
+//        unimplemented!()
+//    }
+//
+//    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+//        let meta = self.get_meta();
+//        let args = default::verify_args(meta, g, args)?;
+//        // Verify first argument is a Parameter
+//        if g.get_node(args[0])?.op.get_meta().name != "Parameter" {
+//            return Err(ErrorKind::InvalidArguments(
+//                String::new() + meta.name, args,
+//                "First argument must be a parameter.".into()).into())
+//        }
+//        // Verify that the first argument does not already have an Update
+//        match g.op_map.get("Update").unwrap_or(&Vec::new()).iter().position(|&x| x == args[0]) {
+//            Some(_) => {
+//                let param_name = g.get_node(args[0])?.op.get_args().unwrap()
+//                    .downcast::<(String, FundamentalType, Shape)>().unwrap().0;
+//                Err(ErrorKind::InvalidArguments(
+//                    String::new() + meta.name, args,
+//                    format!("The parameter '{}' already has an update.", param_name)).into())
+//            },
+//            None => Ok(args)
+//        }
+//
+//    }
+//
+//    fn clone_box(&self) -> Box<Operator> {
+//        Box::new(self.clone())
+//    }
+//
+//    fn get_meta(&self) -> &OperatorMetaData {
+//        static UPDATE: OperatorMetaData = OperatorMetaData{
+//            name: "Update",
+//            arity: Arity::Binary,
+//            num_outputs: 0,
+//            differential_parents: 0,
+//            ordered_parents: true,
+//            elementwise: true,
+//            type_preserving: false,
+//            reduction: false,
+//            differentiable: false,
+//            scalar_output: false,
+//            shape_operator: false,
+//            fixed_output_type: None,
+//        };
+//        &UPDATE
+//    }
+//}
+
+
 #[derive(Debug, Clone)]
 pub struct Cast {
     pub data_type: FundamentalType,
 }
 
 impl Operator for Cast {
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
@@ -21,16 +78,16 @@ impl Operator for Cast {
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         let dt = g.get_node(args[0]).unwrap().data_type;
         if self.data_type < dt {
-            match g.rc.borrow().props.policies.downcast {
+            match g.props.policies.downcast {
                 Policy::Quite => {},
                 Policy::Warn => {
                     warn!(g.log, format!("[{}] Down tensor casting from {} to {}.",
-                                             meta.name, dt, self.data_type));
+                                         meta.name, dt, self.data_type));
                 },
                 Policy::Raise => {
                     return Err(ErrorKind::Downcast(dt, self.data_type).into());
@@ -78,7 +135,7 @@ pub struct Broadcast {
 
 impl Operator for Broadcast {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
@@ -88,7 +145,7 @@ impl Operator for Broadcast {
         }
     }
 
-    fn verify_args(&self, g: &Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
         let meta = self.get_meta();
         let args = default::verify_args(meta, g, args)?;
         // Verify tensor has unit shape on the axes
@@ -108,7 +165,7 @@ impl Operator for Broadcast {
             check && g.get_node(a).unwrap().op.get_meta().shape_operator);
         if ! shape_operators {
             Err(ErrorKind::InvalidArguments(String::new() + meta.name, args,
-                format!("The operator can accept only 'shape_operators'.")).into())
+                                            format!("The operator can accept only 'shape_operators'.")).into())
         } else {
             Ok(args)
         }
@@ -160,7 +217,7 @@ pub struct MakeConstant {}
 
 impl Operator for MakeConstant {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         // No gradients are passed trough this operator
         Ok(Vec::new())
@@ -213,7 +270,7 @@ impl Reorder {
 
 impl Operator for Reorder {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {

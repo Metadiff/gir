@@ -3,11 +3,11 @@ use ops::*;
 use graph::*;
 use errors::*;
 
-pub fn dim(graph: &Graph, arg:usize, axis: Axis) -> Result<usize> {
+pub fn dim(graph: &mut Graph, arg:usize, axis: Axis) -> Result<usize> {
     graph.apply_op(Box::new(TensorShape {axis: axis}), vec![arg])
 }
 
-pub fn shape(graph: &Graph, arg: usize) -> Result<(usize, usize, usize, usize)> {
+pub fn shape(graph: &mut Graph, arg: usize) -> Result<(usize, usize, usize, usize)> {
     let shape0 = graph.apply_op(Box::new(TensorShape {axis: Axis::Axis0}), vec![arg])?;
     let shape1 = graph.apply_op(Box::new(TensorShape {axis: Axis::Axis1}), vec![arg])?;
     let shape2 = graph.apply_op(Box::new(TensorShape {axis: Axis::Axis2}), vec![arg])?;

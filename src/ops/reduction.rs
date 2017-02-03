@@ -12,7 +12,7 @@ pub struct Sum {
 
 impl Operator for Sum {
     #[allow(unused_variables, unused_mut)]
-    fn reverse_diff(&self, g: &Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
         let ancestor = g.get_node(x)?.ancestors[0];
         if flow_tree[ancestor] {
