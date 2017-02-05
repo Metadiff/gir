@@ -1,8 +1,7 @@
 #[macro_use]
-extern crate graph_ir;
+extern crate gir;
 extern crate slog_term;
 
-use graph_ir as gir;
 use gir::api::*;
 use std::fs::File;
 
