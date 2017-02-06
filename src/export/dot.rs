@@ -18,7 +18,7 @@ pub fn to_dot(io: &mut Write, g: &Graph) -> ::std::io::Result<()>  {
 
 pub fn expr_to_dot(io: &mut Write, expr: &ExprData, sep: &str) -> ::std::io::Result<()>  {
     let scope = if expr.scope.len() == 0 {
-        "0".into()
+        "base".into()
     } else {
         expr.scope.join(sep)
     };
@@ -30,12 +30,14 @@ pub fn expr_to_dot(io: &mut Write, expr: &ExprData, sep: &str) -> ::std::io::Res
         _ => "blue"
     };
     writeln!(io, "subgraph cluster_{} {{\n\
+    label = \"{}\";\n\
     \tN{} [shape=rectangle, style=filled, fillcolor={},\n\
     label=\"\
     {}{:?}\\n\
     id:{}\\n\
     shape:{}\\n\
     \"];\n}}",
+             scope,
              scope,
              expr.id,
              color,
@@ -44,23 +46,4 @@ pub fn expr_to_dot(io: &mut Write, expr: &ExprData, sep: &str) -> ::std::io::Res
              expr.id,
              expr.shape,
     )
-//    writeln!(io, "\tN{} [label=\"\
-//    {}{:?}\\n\
-//    id:{}\\n\
-//    name:{}\\n\
-//    data_type:{}\\n\
-//    shape:{}\\n\
-//    scope:{}\\n\
-//    children:{:?}\\n\
-//    \"];",
-//             expr.id,
-//             expr.op.get_meta().name,
-//             expr.ancestors,
-//             expr.id,
-//             expr.name,
-//             expr.data_type,
-//             expr.shape,
-//             expr.scope,
-//             expr.children
-//    )
 }
