@@ -36,6 +36,7 @@ pub struct GraphProperties {
 
 impl Default for GraphProperties {
     fn default() -> Self {
+        // Todo this should be loaded from the environment
         GraphProperties {
             http_proxy: None,
             scope_delimiter: "::".into(),

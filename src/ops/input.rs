@@ -2,6 +2,7 @@ use ops::interface::*;
 use primitives::*;
 use graph::*;
 use errors::*;
+use std::collections::HashSet;
 use symbolic_polynomials::variable;
 use std::any::Any;
 
@@ -23,7 +24,7 @@ impl Operator for Input {
             id: 0,
             name: "".into(),
             ancestors: Vec::new(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: self.data_type,
             shape: self.shape.clone(),
@@ -83,7 +84,7 @@ impl Operator for Input {
 
 #[derive(Debug, Clone)]
 pub struct Parameter {
-    pub param_name: String,
+    pub param_name: Vec<String>,
     pub data_type: FundamentalType,
     pub shape: Shape
 }
@@ -98,9 +99,9 @@ impl Operator for Parameter {
     fn apply_null(&self) -> ExprData {
         ExprData{
             id: 0,
-            name: self.param_name.clone(),
+            name: format!("{}", self.param_name.join("::")),
             ancestors: Vec::new(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: self.data_type,
             shape: self.shape.clone(),
@@ -176,7 +177,7 @@ impl Operator for Scalar {
             id: 0,
             name: "Scalar".into(),
             ancestors: Vec::new(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: self.data_type,
             shape: Shape::scalar_shape(),
@@ -239,7 +240,7 @@ impl Operator for SymIntInput {
             id: 0,
             name: "SymInt".into(),
             ancestors: Vec::new(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: FundamentalType::UnsignedInt,
             shape: Shape::scalar_shape(),
@@ -285,6 +286,55 @@ impl Operator for SymIntInput {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Cleared {}
 
+impl Operator for Cleared {
+    #[allow(unused_variables, unused_mut)]
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+                    -> Result<Vec<(usize, usize)>> {
+        unimplemented!()
+    }
 
+    fn apply_null(&self) -> ExprData {
+        ExprData{
+            id: 0,
+            name: "Cleared".into(),
+            ancestors: Vec::new(),
+            children: HashSet::new(),
+            op: self.clone_box(),
+            data_type: FundamentalType::Boolean,
+            shape: Shape::scalar_shape(),
+            is_input_dependent: false,
+            is_differentiable: false,
+            matrix_positivity: MatrixPositivity::PositiveDefinite,
+            matrix_symmetry: MatrixSymmetry::Symmetric,
+            matrix_fill: MatrixFill::Diagonal,
+            grad_level: 0,
+            scope: Vec::new(),
+            sym_int: None
+        }
+    }
 
+    fn clone_box(&self) -> Box<Operator> {
+        Box::new(self.clone())
+    }
+
+    fn get_meta(&self) -> &OperatorMetaData {
+        static CLEARED: OperatorMetaData = OperatorMetaData{
+            name: "Cleared",
+            arity: Arity::Nullary,
+            num_outputs: 1,
+            differential_parents: 0,
+            ordered_parents: false,
+            elementwise: false,
+            type_preserving: false,
+            reduction: false,
+            differentiable: false,
+            scalar_output: true,
+            shape_operator: false,
+            fixed_output_type: Some(FundamentalType::Boolean),
+        };
+        &CLEARED
+    }
+}

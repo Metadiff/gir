@@ -1,11 +1,14 @@
+use primitives::*;
 use graph::*;
 use backend::*;
 use backend::opencl::function::*;
 
-use ocl::{Platform, Device, Context, Queue};
+use ocl::{Platform, Device, Context, Queue, Buffer};
 use ocl::core::DeviceInfo;
+use ocl::flags::{MemFlags, CommandQueueProperties};
 use std::io;
 use std::collections::HashMap;
+use tera::Tera;
 
 
 /// For now this will support only single device
@@ -14,7 +17,7 @@ pub struct OpenCLBackend {
     pub platform: Platform,
     pub device: Device,
     pub context: Context,
-    pub queue: Queue,
+    pub precisions: BackendPrecisions,
 }
 
 
@@ -29,12 +32,11 @@ impl Default for OpenCLBackend {
             .devices(device)
             .build()
             .unwrap();
-        let queue = Queue::new(&context, device).unwrap();
         OpenCLBackend {
             platform: platform,
             device: device,
             context: context,
-            queue: queue,
+            precisions: (Precision::P32, Precision::P32, Precision::P32)
         }
     }
 }
@@ -44,16 +46,37 @@ impl Backend<OpenCLFunction> for OpenCLBackend {
                      -> OpenCLFunction {
         let sym_input_shapes = gf.inputs.iter()
             .map(|&id| gf.graph.nodes[id].shape.clone()).collect();
+        let flags = Some(MemFlags::alloc_host_ptr() | MemFlags::read_write());
+        let mut kernel_map = HashMap::new();
+        let mut tera = compile_templates!("templates/kernels");
+        for &i in &gf.graph.order {
+            let mut context = ::tera::Context::new();
+            context.add("b_type", type_to_string(gf.graph.nodes[i].data_type, self.precisions));
+            context.add("c_type", "size_t");
+            kernel_map.insert(i, tera.render("store.tera", context));
+        }
         OpenCLFunction {
-            memory_map: MemoryMap::default(),
-            gf: gf,
             initialized: false,
+            precisions: self.precisions,
+            gf: gf,
+            memory_map: build_memory_map(&gf),
+            current_size: 0,
             sym_input_shapes: sym_input_shapes,
             last_shapes: Vec::new(),
             last_deduced: HashMap::new(),
+            buffer: Buffer::<u8>::new(self.queue.clone(), flags, 1 , None).unwrap(),
+            buffer_map: HashMap::new(),
+            kernel_map: kernel_map,
+            queue: self.queue.clone()
         }
     }
 
+    fn get_precisions(&self) -> &BackendPrecisions {
+        self.precisions
+    }
+    fn set_precisions(&mut self, precisions: BackendPrecisions){
+        self.precisions = precisions;
+    }
     fn info(&self, f:&mut io::Write) -> io::Result<()> {
         writeln!(f, "OpenCL Backend Information:")?;
         // Todo: when String.repeat() becomes stable exchange
@@ -91,7 +114,6 @@ impl Backend<OpenCLFunction> for OpenCLBackend {
         writeln!(f, "==================================================")?;
         Ok(())
     }
-
     fn general_info(&self, f: &mut io::Write) -> io::Result<()> {
         writeln!(f, "OpenCL Backend General Information:")?;
         writeln!(f, "==================================================")?;
@@ -137,64 +159,32 @@ impl Backend<OpenCLFunction> for OpenCLBackend {
     }
 }
 
-//impl OpenCLBackend {
-//    pub fn process_graph(&mut self, graph: &Graph) {
-//        let mut kernel_map = HashMap::new();
-//        let mut kernels: Vec<String> = Vec::new();
-//        for &id in &graph.order {
-//            let ref node = graph.nodes[id];
-//            let meta = node.op.get_meta();
-//            match meta.name {
-//                "Input" | "Parameter" | "Scalar" => {},
-//                "Add" => {
-//                    match node.ancestors.len() {
-//                        2 => {
-//                            let name = "add_2_float_32";
-//                            if kernel_map.get(name).is_none() {
-//                                let kernel = format!(
-//                                    "__kernel void multiply(__global float* out,
-//                                    __global float* in1,
-//                                    __global float* in2){{
-//                                        auto id = get_global_id(0);
-//                                        out[id] = in1[id] + in2[id];
-//                                    }}");
-//                                kernel_map.insert(name, kernel);
-//                            }
-//                        },
-//                        _ => {}
-//                    }
-//                }
-//                _ => {}
-//            }
-//        }
-//    }
-//
-//
-//    pub fn make_program(&mut self, source: &str) {
-//        self.program = Some(Program::builder()
-//            .src(source)
-//            .devices(self.device)
-//            .build(&self.context).unwrap());
-//    }
-//
-//    pub fn execute_kernel(&self, kernel_name: &str) {
-//        let dims = &[64];
-//        let buffer = Buffer::<f32>::new(self.queue.clone(), None, dims, None).unwrap();
-//        let kernel = Kernel::new(kernel_name, self.program.as_ref().unwrap(), &self.queue).unwrap()
-//            .gws(&[10])
-//            .arg_buf(&buffer)
-//            .arg_scl(10.0f32);
-//
-//        let mut event_list = EventList::new();
-//
-//        let mut result = vec![1.0f32; dims[0]];
-//        let mut event = Event::empty();
-//        buffer.cmd().write(&result).enq().unwrap();
-//        kernel.cmd().enq().unwrap();
-//        buffer.cmd().read(&mut result).enew(&mut event).enq().unwrap();
-//        event_list.wait().unwrap();
-//        println!("{:?}", result);
-//    }
-//
-//
-//}
+pub fn type_to_string(_type: FundamentalType, precisions: &BackendPrecisions) -> String {
+    match _type {
+        FundamentalType::Boolean => "bool".into(),
+        FundamentalType::UnsignedInt => match precisions.integer_precision {
+            Precision::P8 => unimplemented!(),
+            Precision::P16 => "uint_16".into(),
+            Precision::P32 => "uint_32".into(),
+            Precision::P64 => "uint_64".into(),
+        },
+        FundamentalType::SignedInt => match precisions.integer_precision {
+            Precision::P8 => unimplemented!(),
+            Precision::P16 => "int_16".into(),
+            Precision::P32 => "int_32".into(),
+            Precision::P64 => "int_64".into(),
+        },
+        FundamentalType::Float => match precisions.float_precision {
+            Precision::P8 => unimplemented!(),
+            Precision::P16 => "float_16".into(),
+            Precision::P32 => "float_32".into(),
+            Precision::P64 => "float_64".into(),
+        },
+        FundamentalType::UnsignedInt => match precisions.complex_precision {
+            Precision::P8 => unimplemented!(),
+            Precision::P16 => unimplemented!(),
+            Precision::P32 => unimplemented!(),
+            Precision::P64 => unimplemented!(),
+        }
+    }
+}

@@ -3,6 +3,7 @@ use graph::*;
 use errors::*;
 use api::ids;
 use std::any::Any;
+use std::collections::HashSet;
 //use std::borrow::Borrow;
 //use std::cell::RefCell;
 
@@ -55,7 +56,7 @@ pub trait Operator: ::std::fmt::Debug {
             id: 0,
             name: "".into(),
             ancestors: args.clone(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: self.get_data_type(g, &args),
             shape: self.get_shape(g, &args),
@@ -254,8 +255,7 @@ pub mod default {
         }
         // Make sure all arguments are up to that shape, if not broadcast them accordingly
         for a in args.iter_mut() {
-            if shape != graph.get_node(*a).unwrap().shape  &&
-                graph.get_node(*a).unwrap().shape != Shape::scalar_shape() {
+            if shape != graph.get_node(*a).unwrap().shape {
                 let br: Vec<Option<usize>> = Axis::iter().zip(shape_i.iter())
                     .map(|(&axis, &arg_id)| {
                         if shape.get(axis) != graph.get_node(*a).unwrap().shape.get(axis) {
@@ -281,6 +281,17 @@ pub mod default {
                 *a = ids::broadcast(graph, *a, [br[0], br[1], br[2], br[3]])?;
             }
         }
+        // Put any scalars at the back
+//        let mut scalars = Vec::new();
+//        let mut i = 0;
+//        while i < args.len() {
+//            if graph.nodes[args[i]].shape.order() == 0 {
+//                scalars.push(args.remove(i));
+//            } else {
+//                i += 1;
+//            }
+//        }
+//        args.append(&mut scalars);
         Ok(args)
     }
 

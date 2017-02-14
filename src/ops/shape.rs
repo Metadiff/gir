@@ -3,6 +3,7 @@ use primitives::*;
 use graph::*;
 use errors::*;
 use std::any::Any;
+use std::collections::HashSet;
 
 
 #[derive(Debug, Clone)]
@@ -50,7 +51,7 @@ impl Operator for TensorShape {
             id: 0,
             name: "".into(),
             ancestors: args.clone(),
-            children: Vec::new(),
+            children: HashSet::new(),
             op: self.clone_box(),
             data_type: self.get_data_type(g, &args),
             shape: self.get_shape(g, &args),

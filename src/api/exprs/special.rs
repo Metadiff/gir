@@ -5,7 +5,7 @@ use ops::interface::default::*;
 use super::super::ids;
 use std::ops::DerefMut;
 
-pub fn overwrite_update<T: AsRef<Expr>>(arg: T, upd: T) -> Result<()> {
+pub fn overwrite_update<T: AsRef<Expr>>(arg: T, upd: T) -> Result<bool> {
     let arg = arg.as_ref();
     let upd = upd.as_ref();
     same_graph_2(arg, upd)?;
@@ -16,7 +16,8 @@ pub fn update<T: AsRef<Expr>>(arg: T, upd: T) -> Result<()> {
     let arg = arg.as_ref();
     let upd = upd.as_ref();
     same_graph_2(arg, upd)?;
-    ids::update(arg.wrapper.get_mut().deref_mut(), arg.id, upd.id)
+    ids::update(arg.wrapper.get_mut().deref_mut(), arg.id, upd.id)?;
+    Ok(())
 }
 
 pub fn cast<T: AsRef<Expr>>(arg: T, data_type: FundamentalType) -> Result<Expr> {

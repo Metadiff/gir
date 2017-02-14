@@ -19,7 +19,7 @@ pub struct ExprData{
     pub id: usize,
     pub name: String,
     pub ancestors: Vec<usize>,
-    pub children: Vec<usize>,
+    pub children: HashSet<usize>,
     pub op: Box<Operator>,
     pub data_type: FundamentalType,
     pub shape: Shape,
@@ -64,7 +64,7 @@ pub struct Graph {
     pub grad_level: usize,
     pub scope: Vec<String>,
     pub op_map: HashMap<String, Vec<usize>>,
-    pub updates: HashMap<usize, usize>,
+    //    pub updates: HashMap<usize, usize>,
     pub log: Logger,
 }
 
@@ -76,16 +76,19 @@ impl Default for Graph {
 
 impl Graph {
     pub fn new(log: Logger) -> Self {
-        Graph {
+        let mut graph = Graph {
             nodes: Vec::new(),
             order: Vec::new(),
             props: GraphProperties::default(),
             grad_level: 0,
             scope: Vec::new(),
             op_map: HashMap::new(),
-            updates: HashMap::new(),
+            //            updates: HashMap::new(),
             log: log
-        }
+        };
+        // Todo insert all ops
+        graph.op_map.insert("Update".into(), Vec::new());
+        graph
     }
 
     pub fn scope_str(&self) -> String {
@@ -120,7 +123,7 @@ impl Graph {
             data.scope = self.scope.clone();
             //            println!("Adding node {:?}", data);
             for &a in &data.ancestors {
-                self.nodes[a].children.push(data.id)
+                self.nodes[a].children.insert(data.id);
             }
             // Insert into op_map
             if !self.op_map.contains_key(data.op.get_meta().name) {
@@ -145,14 +148,14 @@ impl Graph {
                     // Check if parameter already exists
                     if let Some(v) = self.op_map.get("Parameter") {
                         let (_, _, name) = *data.op.get_args().unwrap()
-                            .downcast::<(FundamentalType, Shape, String)>().unwrap();
+                            .downcast::<(FundamentalType, Shape, Vec<String>)>().unwrap();
                         for &id in v {
                             let (_, _, v_name) = *self.nodes[id].op.get_args().unwrap()
-                                .downcast::<(FundamentalType, Shape, String)>().unwrap();
+                                .downcast::<(FundamentalType, Shape, Vec<String>)>().unwrap();
                             if name == v_name {
                                 return Err(ErrorKind::Msg(
                                     format!("The parameter '{}' already exists \
-                                    in the graph.", name)).into())
+                                    in the graph.", name.join("::"))).into())
                             }
                         }
                     }
@@ -286,8 +289,10 @@ impl Graph {
     }
 
     pub fn parameter(&mut self,  data_type: FundamentalType, shape: Shape, name: String) -> Result<usize> {
+        let mut param_name = self.scope.clone();
+        param_name.push(name);
         let op = Box::new(Parameter{
-            param_name: self.name_in_scope(&name),
+            param_name: param_name,
             data_type: data_type,
             shape: shape
         });
@@ -306,9 +311,22 @@ impl Graph {
                 let node: &ExprData = self.nodes.get(id).unwrap();
                 let op = node.op.clone();
                 graph.scope = self.nodes[id].scope.clone();
-                let new_id = match op.get_meta().name {
+                match op.get_meta().name {
                     "Input" | "Parameter" | "Scalar" => {
-                        graph.add_node(op.apply_null())?
+                        let new_id = graph.add_node(op.apply_null())?;
+                        provided.insert(id, new_id);
+                    },
+                    "Update" => if ! discard_updates {
+                        let new_id = {
+                            let arg = &node.ancestors[0];
+                            let arg = provided.get(arg).ok_or(ErrorKind::Msg(
+                                format!("The argument {} needed for updates is not provided.", arg)))?;
+                            let upd = &node.ancestors[1];
+                            let upd = provided.get(upd).ok_or(ErrorKind::Msg(
+                                format!("The argument {} needed for updates is not provided.", upd)))?;
+                            ids::update(graph, *arg, *upd)?
+                        };
+                        provided.insert(id, new_id);
                     },
                     _ => {
                         let mut ancestors: Vec<usize> = Vec::with_capacity(node.ancestors.len());
@@ -318,22 +336,13 @@ impl Graph {
                             ancestors.push(v);
                         }
                         let data = op.apply(graph, ancestors)?;
-                        graph.add_node(data)?
+                        let new_id =  graph.add_node(data)?;
+                        provided.insert(id, new_id);
                     }
                 };
-                provided.insert(id, new_id);
             }
         }
         graph.scope = init_scope;
-        if ! discard_updates {
-            for (a, u) in self.updates.iter() {
-                let ap = provided.get(a).ok_or(ErrorKind::Msg(
-                    format!("The argument {} needed for updates is not provided.", a)))?;
-                let up = provided.get(a).ok_or(ErrorKind::Msg(
-                    format!("The argument {} needed for updates is not provided.", u)))?;
-                ids::update(graph, *ap, *up)?;
-            }
-        }
         Ok(provided)
     }
 }
@@ -342,8 +351,6 @@ impl Graph {
 pub struct GraphWrapper {
     pub graph: Rc<RefCell<Graph>>
 }
-
-pub type MutGraph<'a> = RefMut<'a, Graph>;
 
 impl GraphWrapper {
     pub fn new(log: Logger) -> Self {
@@ -418,6 +425,7 @@ pub struct GraphFunction {
     pub graph: Graph,
     pub inputs: Vec<usize>,
     pub outputs: Vec<usize>,
+    pub parameters: HashMap<String, usize>,
     pub unique_symints: HashSet<String>,
 }
 
@@ -440,9 +448,9 @@ impl GraphFunction {
         leafs.clone_from_slice(outputs);
         // Add updates from the graph
         if ! discard_updates {
-            for (&var, &upd) in &graph.updates {
-                leafs.push(var);
-                leafs.push(upd);
+            for &u in graph.op_map.get("Update").unwrap() {
+                leafs.push(graph.nodes[u].ancestors[0]);
+                leafs.push(graph.nodes[u].ancestors[1]);
             }
         }
         // Add extra updates
@@ -477,12 +485,18 @@ impl GraphFunction {
             node.shape.2.unique_identifiers(&mut unique);
             node.shape.3.unique_identifiers(&mut unique);
         }
+        // Find all of the parameters
+        let params = sub_graph.op_map.get("Parameter")
+            .map(|v| v.iter()
+                .map(|&id| (sub_graph.nodes[id].name.clone(), id)).collect())
+            .unwrap_or(HashMap::new());
         // Return the function created
         Ok(GraphFunction{
             name: name.unwrap_or("main".into()),
             graph: sub_graph,
             inputs: inputs.iter().map(|x| *mapping.get(x).unwrap()).collect(),
             outputs: outputs.iter().map(|x| *mapping.get(x).unwrap()).collect(),
+            parameters: params,
             unique_symints: unique,
         })
     }

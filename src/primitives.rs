@@ -25,10 +25,10 @@ impl ::std::fmt::Display for FundamentalType {
 /// Variable storage precisions
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Precision {
-    P8 = 0,
-    P16 = 1,
-    P32 = 2,
-    P64 = 3,
+    P8 = 1,
+    P16 = 2,
+    P32 = 4,
+    P64 = 8,
 }
 
 impl ::std::fmt::Display for Precision {
@@ -41,7 +41,6 @@ impl ::std::fmt::Display for Precision {
         }
     }
 }
-
 
 /// Operator arity (Number of arguments)
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
@@ -223,6 +222,10 @@ impl Shape {
         }
     }
 
+    pub fn elements(&self) -> SymInt {
+        &self.0 * &self.1 * &self.2 * &self.3
+    }
+
     pub fn get(&self, axis: Axis) -> &SymInt {
         match axis {
             Axis::Axis0 => &self.0,
@@ -296,4 +299,39 @@ impl ::std::fmt::Display for Policy {
         }
     }
 }
+
+//#[derive(Debug, Clone)]
+//pub struct ScopedName {
+//    pub scoped_name: Vec<String>,
+//    pub scope_delimiter: String
+//}
+//
+//impl PartialEq for ScopedName {
+//    fn eq(&self, other: &ScopedName) -> bool {
+//        if self.scoped_name.len() != other.scoped_name.len() {
+//            return false
+//        }
+//        for (name1, name2) in self.scoped_name.iter().zip(other.scoped_name.iter()) {
+//            if name1 != name2 {
+//                return false
+//            }
+//        }
+//        return true
+//    }
+//}
+//
+//impl Eq for ScopedName {}
+//
+//impl ::std::hash::Hash for ScopedName {
+//    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+//        self.scoped_name.join(&self.scope_delimiter).hash(state);
+//    }
+//}
+//
+//impl ::std::fmt::Display for ScopedName {
+//    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+//        write!(f, "{}", self.scoped_name.join(&self.scope_delimiter))
+//    }
+//}
+
 

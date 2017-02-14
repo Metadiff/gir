@@ -6,9 +6,9 @@ use api::*;
 
 
 #[derive(Debug, Clone)]
-pub struct MatrixMul {}
+pub struct MatMul {}
 
-impl Operator for MatrixMul {
+impl Operator for MatMul {
     #[allow(unused_variables, unused_mut)]
     fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
                     -> Result<Vec<(usize, usize)>> {
@@ -16,8 +16,8 @@ impl Operator for MatrixMul {
         if anc.len() == 2 {
             let mut res = Vec::new();
             if flow_tree[anc[0]] {
-                let dx_transpose = ids::reorder(g, dx, None)?;
-                res.push((anc[0], ids::mat_mul(g, anc[1], dx_transpose)?));
+                let anc_transpose = ids::reorder(g, anc[1], None)?;
+                res.push((anc[0], ids::mat_mul(g, dx, anc_transpose)?));
             }
             if flow_tree[anc[1]] {
                 let anc_transpose = ids::reorder(g, anc[0], None)?;
@@ -60,7 +60,7 @@ impl Operator for MatrixMul {
 
     fn get_meta(&self) -> &OperatorMetaData {
         static MATRIX_MUL: OperatorMetaData = OperatorMetaData{
-            name: "MatrixMul",
+            name: "MatMul",
             arity: Arity::Nary,
             num_outputs: 1,
             differential_parents: ::std::usize::MAX,

@@ -1,15 +1,14 @@
 #[macro_use]
 extern crate gir;
-extern crate slog_term;
-
 use gir::api::*;
-use gir::backend::opencl::*;
-use gir::backend::*;
 use std::fs::File;
+
+//use gir::backend::opencl::*;
+use gir::backend::af::*;
 
 fn main() {
     let f = make_graph().unwrap();
-    compile_and_run(f);
+    compile_and_run_af(f);
 }
 
 #[allow(unused_variables, unused_mut)]
@@ -19,7 +18,7 @@ fn make_graph() -> gir::errors::Result<gir::GraphFunction> {
     // Learning rate
     let alpha = &f_param!(g, (), "alpha")?;
     // Dummy
-    let beta = &f_var!(g, ());
+//    let beta = &f_var!(g, ());
     // Input
     let x = &f_var!(g, (784, "n"), "input");
     // Targets
@@ -38,11 +37,11 @@ fn make_graph() -> gir::errors::Result<gir::GraphFunction> {
     // Generate SGD updates
     g.get_mut().scope.push("updates".into());
     let updates: Vec<(gir::Expr, gir::Expr)> = params.iter().zip(grads.iter())
-        .map(|(ref p, ref g)| ((**p).clone(), **p - alpha * g)).collect();
+        .map(|(&& ref p, ref g)| (p.clone(), p - alpha * g)).collect();
     g.get_mut().scope.clear();
     // Compile function
     let f = gir::GraphFunction::new_from_expr(&[x.clone(), y.clone()], &[error],
-                                                        false, &updates[..], Some("test_func".into()))?;
+                                              false, &updates[..], Some("test_func".into()))?;
     println!("{} - {}", g.get().nodes.len(), f.graph.nodes.len());
     let mut file = File::create("target/html/foo.dot").unwrap();
     gir::export::dot::to_dot(&mut file, &f.graph).unwrap();
@@ -57,32 +56,32 @@ fn make_graph() -> gir::errors::Result<gir::GraphFunction> {
 //    }
 //"#;
 
+#[macro_use(af_print)]
+extern crate arrayfire as af;
+use af::print_gen;
+
 #[allow(unused_variables, unused_mut)]
-pub fn compile_and_run(func: gir::GraphFunction) {
-    let backend = OpenCLBackend::default();
+pub fn compile_and_run_af(func: gir::GraphFunction) {
+    // Initialize backend
+    let mut backend = AfBackend::default();
     backend.print_general_info().unwrap();
-    backend.print_info().unwrap();
+    // Initialize parameters
+    let alpha = af::constant::<f32>(0.001, af::Dim4::new(&[1, 1, 1, 1]));
+    backend.set_param_value("alpha", alpha);
+    let w1 = af::randn::<f32>(af::Dim4::new(&[1, 784, 1, 1])) / 100.0f32;
+    backend.set_param_value("w1", w1);
+    let b1 = af::randn::<f32>(af::Dim4::new(&[1, 1, 1, 1])) / 100.0f32;
+    backend.set_param_value("b1", b1);
+    // Make inputs
+    let input = af::randu::<f32>(af::Dim4::new(&[784, 20, 1, 1]));
+    let target = af::randu::<f32>(af::Dim4::new(&[20, 1, 1, 1]));
+    let ins = &vec![&input, &target];
+    // Compile function
     let mut f = backend.make_function(func);
-    let x = OpenCLContainer {
-        mem: vec![1.0; 784*10],
-        dims: [784, 10, 1, 1]
-    };
-    let y = OpenCLContainer {
-        mem: vec![0.5; 10],
-        dims: [10, 1, 1, 1]
-    };
-    let y_wrong = OpenCLContainer {
-        mem: vec![0.5; 12],
-        dims: [12, 1, 1, 1]
-    };
-    // Not correct number of inputs
-    println!("{:?}", f.eval(&vec![]));
-    // Incorrect size, e.g. x.dim1 = 10, y_wrong.dim0 = 12
-    println!("{:?}", f.eval(&vec![x.clone(), y_wrong]));
-    // Correct
-    println!("{:?}", f.eval(&vec![x, y]));
-    for (ref sym, ref ls) in f.sym_input_shapes.iter().zip(f.last_shapes.iter()) {
-        println!("{} - {:?}", sym, ls);
+    // Run 100 iterations
+    let mut result = [0.0f32];
+    for i in 0..100 {
+        f.eval(ins).unwrap().pop().unwrap().host(&mut result);
+        println!("Iteration {}: {:.5e}", i, result[0]);
     }
-    println!("{:?}", f.last_deduced)
 }

@@ -5,61 +5,61 @@ use errors::*;
 use api::*;
 use std::any::Any;
 
-//#[derive(Debug, Clone)]
-//pub struct Update {}
-//
-//impl Operator for Update {
-//    #[allow(unused_variables, unused_mut)]
-//    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
-//                    -> Result<Vec<(usize, usize)>> {
-//        unimplemented!()
-//    }
-//
-//    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
-//        let meta = self.get_meta();
-//        let args = default::verify_args(meta, g, args)?;
-//        // Verify first argument is a Parameter
-//        if g.get_node(args[0])?.op.get_meta().name != "Parameter" {
-//            return Err(ErrorKind::InvalidArguments(
-//                String::new() + meta.name, args,
-//                "First argument must be a parameter.".into()).into())
-//        }
-//        // Verify that the first argument does not already have an Update
-//        match g.op_map.get("Update").unwrap_or(&Vec::new()).iter().position(|&x| x == args[0]) {
-//            Some(_) => {
-//                let param_name = g.get_node(args[0])?.op.get_args().unwrap()
-//                    .downcast::<(String, FundamentalType, Shape)>().unwrap().0;
-//                Err(ErrorKind::InvalidArguments(
-//                    String::new() + meta.name, args,
-//                    format!("The parameter '{}' already has an update.", param_name)).into())
-//            },
-//            None => Ok(args)
-//        }
-//
-//    }
-//
-//    fn clone_box(&self) -> Box<Operator> {
-//        Box::new(self.clone())
-//    }
-//
-//    fn get_meta(&self) -> &OperatorMetaData {
-//        static UPDATE: OperatorMetaData = OperatorMetaData{
-//            name: "Update",
-//            arity: Arity::Binary,
-//            num_outputs: 0,
-//            differential_parents: 0,
-//            ordered_parents: true,
-//            elementwise: true,
-//            type_preserving: false,
-//            reduction: false,
-//            differentiable: false,
-//            scalar_output: false,
-//            shape_operator: false,
-//            fixed_output_type: None,
-//        };
-//        &UPDATE
-//    }
-//}
+#[derive(Debug, Clone)]
+pub struct Update {}
+
+impl Operator for Update {
+    #[allow(unused_variables, unused_mut)]
+    fn reverse_diff(&self, g: &mut Graph, x: usize, dx: usize, flow_tree: &Vec<bool>)
+                    -> Result<Vec<(usize, usize)>> {
+        unimplemented!()
+    }
+
+    fn verify_args(&self, g: &mut Graph, args: Vec<usize>) -> Result<Vec<usize>> {
+        let meta = self.get_meta();
+        let args = default::verify_args(meta, g, args)?;
+        // Verify first argument is a Parameter
+        if g.get_node(args[0])?.op.get_meta().name != "Parameter" {
+            return Err(ErrorKind::InvalidArguments(
+                String::new() + meta.name, args,
+                "First argument must be a parameter.".into()).into())
+        }
+        // Verify that the first argument does not already have an Update
+        match g.op_map.get("Update").unwrap_or(&Vec::new()).iter().position(|&x| x == args[0]) {
+            Some(_) => {
+                let param_name = g.get_node(args[0])?.op.get_args().unwrap()
+                    .downcast::<(String, FundamentalType, Shape)>().unwrap().0;
+                Err(ErrorKind::InvalidArguments(
+                    String::new() + meta.name, args,
+                    format!("The parameter '{}' already has an update.", param_name)).into())
+            },
+            None => Ok(args)
+        }
+
+    }
+
+    fn clone_box(&self) -> Box<Operator> {
+        Box::new(self.clone())
+    }
+
+    fn get_meta(&self) -> &OperatorMetaData {
+        static UPDATE: OperatorMetaData = OperatorMetaData{
+            name: "Update",
+            arity: Arity::Binary,
+            num_outputs: 0,
+            differential_parents: 0,
+            ordered_parents: true,
+            elementwise: true,
+            type_preserving: false,
+            reduction: false,
+            differentiable: false,
+            scalar_output: false,
+            shape_operator: false,
+            fixed_output_type: None,
+        };
+        &UPDATE
+    }
+}
 
 
 #[derive(Debug, Clone)]

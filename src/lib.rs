@@ -8,6 +8,8 @@ extern crate slog_term;
 #[macro_use]
 extern crate tera;
 extern crate ocl;
+#[macro_use(af_print)]
+extern crate arrayfire;
 
 pub mod primitives;
 pub mod errors;

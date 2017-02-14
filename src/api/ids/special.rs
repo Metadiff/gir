@@ -4,9 +4,10 @@ use graph::*;
 use errors::*;
 use api::ids;
 
-pub fn overwrite_update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> {
-    graph.updates.remove(&arg);
-    update(graph, arg, upd)
+pub fn overwrite_update(graph: &mut Graph, arg:usize, upd: usize) -> Result<bool> {
+    let existed = remove_update(graph, arg)?;
+    update(graph, arg, upd)?;
+    Ok(existed)
 //    let candidates = graph.get_node(arg)?.children.clone();
 //    let mut old_update = None;
 //    for &c in &candidates {
@@ -36,7 +37,7 @@ pub fn overwrite_update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> 
 //    }
 }
 
-pub fn update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> {
+pub fn update(graph: &mut Graph, arg:usize, upd: usize) -> Result<usize> {
     // Verify first argument is a Parameter
     if graph.get_node(arg)?.op.get_meta().name != "Parameter" {
         return Err(ErrorKind::InvalidArguments(
@@ -44,14 +45,30 @@ pub fn update(graph: &mut Graph, arg:usize, upd: usize) -> Result<()> {
             "First argument must be a parameter.".into()).into())
     }
     // Verify that the first argument does not already have an Update
-    if let Some(u) = graph.updates.get(&arg) {
-        let ref param_name = graph.nodes[arg].name;
-        return Err(ErrorKind::InvalidArguments(
-            "Update".into(), vec![arg, upd],
-            format!("The parameter '{}' already has an update - {}.", param_name, u)).into())
+    for &u in graph.op_map.get("Update").unwrap() {
+        if graph.nodes[u].ancestors[0] == arg {
+            let ref param_name = graph.nodes[arg].name;
+            return Err(ErrorKind::InvalidArguments(
+                "Update".into(), vec![arg, upd],
+                format!("The parameter '{}' already has an update - {}.", param_name, u)).into())
+        }
     }
-    graph.updates.insert(arg, upd);
-    Ok(())
+    graph.apply_op(Box::new(Update {}), vec![arg, upd])
+}
+
+pub fn remove_update(graph: &mut Graph, arg:usize) -> Result<bool> {
+    let updates = graph.op_map.get("Update").unwrap();
+    for &u in updates {
+        if graph.nodes[u].ancestors[0] == arg {
+            let upd = graph.nodes[u].ancestors[1];
+            graph.nodes[arg].children.remove(&u);
+            graph.nodes[upd].children.remove(&u);
+            let op = Box::new(Cleared{});
+            graph.nodes[u] = op.apply_null();
+            return Ok(true)
+        }
+    }
+    Ok(false)
 }
 
 pub fn cast(graph: &mut Graph, arg: usize, data_type: FundamentalType) -> Result<usize> {
