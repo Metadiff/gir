@@ -29,13 +29,21 @@ impl Operator for Update {
             Some(_) => {
                 let param_name = g.get_node(args[0])?.op.get_args().unwrap()
                     .downcast::<(String, FundamentalType, Shape)>().unwrap().0;
-                Err(ErrorKind::InvalidArguments(
+                return Err(ErrorKind::InvalidArguments(
                     String::new() + meta.name, args,
                     format!("The parameter '{}' already has an update.", param_name)).into())
             },
-            None => Ok(args)
+            None => {}
         }
-
+        // Verify they are the same shapes
+        let ref s0 = g.get_node(args[0])?.shape;
+        let ref s1 = g.get_node(args[1])?.shape;
+        if s0 != s1 {
+            return Err(ErrorKind::InvalidArguments(
+                String::new() + meta.name, args,
+                format!("Expected shape {}, given {}.", s0, s1)).into())
+        }
+        Ok(args)
     }
 
     fn clone_box(&self) -> Box<Operator> {

@@ -22,15 +22,15 @@ fn make_graph() -> gir::errors::Result<gir::GraphFunction> {
     // Input
     let x = &f_var!(g, (784, "n"), "input");
     // Targets
-    let y = &f_var!(g, ("n"), "target");
-    let y_t = &transpose(y)?;
+    let y = &f_var!(g, (10, "n"), "target");
+//    let y_t = &transpose(y)?;
     // Parameters
-    let w1 = &f_param!(g, (1, 784), "w1")?;
-    let b1 = &f_param!(g, (1), "b1")?;
+    let w1 = &f_param!(g, (10, 784), "w1")?;
+    let b1 = &f_param!(g, (10), "b1")?;
     // Calculate outputs
     let h1 = &tanh((mat_mul(w1, x)? + b1))?;
     // Error
-    let error = sum_all((h1 - y_t) * (h1 - y_t))? / dim0(y)?;
+    let error = sum_all((h1 - y) * (h1 - y))? / dim1(y)?;
     let params = &vec![w1, b1];
     // Calculate gradients
     let grads = gir::derivative::gradient(&error, &params)?;
@@ -39,14 +39,13 @@ fn make_graph() -> gir::errors::Result<gir::GraphFunction> {
     let updates: Vec<(gir::Expr, gir::Expr)> = params.iter().zip(grads.iter())
         .map(|(&& ref p, ref g)| (p.clone(), p - alpha * g)).collect();
     g.get_mut().scope.clear();
+    let mut file = File::create("target/html/foo.dot").unwrap();
+    gir::export::dot::to_dot(&mut file, &x.wrapper.get()).unwrap();
+    let mut file = File::create("target/html/foo.html").unwrap();
+    gir::export::cytoscape::to_cytoscape_html(&mut file, &x.wrapper.get()).unwrap();
     // Compile function
     let f = gir::GraphFunction::new_from_expr(&[x.clone(), y.clone()], &[error],
                                               false, &updates[..], Some("test_func".into()))?;
-    println!("{} - {}", g.get().nodes.len(), f.graph.nodes.len());
-    let mut file = File::create("target/html/foo.dot").unwrap();
-    gir::export::dot::to_dot(&mut file, &f.graph).unwrap();
-    let mut file = File::create("target/html/foo.html").unwrap();
-    gir::export::cytoscape::to_cytoscape_html(&mut file, &f.graph).unwrap();
     Ok(f)
 }
 
@@ -73,8 +72,8 @@ pub fn compile_and_run_af(func: gir::GraphFunction) {
     let b1 = af::randn::<f32>(af::Dim4::new(&[1, 1, 1, 1])) / 100.0f32;
     backend.set_param_value("b1", b1);
     // Make inputs
-    let input = af::randu::<f32>(af::Dim4::new(&[784, 20, 1, 1]));
-    let target = af::randu::<f32>(af::Dim4::new(&[20, 1, 1, 1]));
+    let input = af::randu::<f32>(af::Dim4::new(&[784, 2000, 1, 1]));
+    let target = af::randu::<f32>(af::Dim4::new(&[10, 2000, 1, 1]));
     let ins = &vec![&input, &target];
     // Compile function
     let mut f = backend.make_function(func);

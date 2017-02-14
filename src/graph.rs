@@ -140,8 +140,8 @@ impl Graph {
     }
 
     pub fn equivalent_node(&self, data: &ExprData) -> Result<Option<usize>> {
+        let meta = data.op.get_meta();
         if data.ancestors.len() == 0 {
-            let meta = data.op.get_meta();
             // Only input operators have no parents
             match meta.name {
                 "Parameter" => {
@@ -191,24 +191,34 @@ impl Graph {
             return Ok(None)
         }
         // For reductions if they have not changed the shape its a pointless exercise
-        if data.op.get_meta().reduction && data.shape == self.nodes[data.ancestors[0]].shape {
+        if meta.reduction && data.shape == self.nodes[data.ancestors[0]].shape {
             return Ok(Some(data.ancestors[0]))
         }
         // Candidates are all children of the ancestor
         for &a in &data.ancestors {
             for &c in &self.nodes.get(a).unwrap().children {
                 let node = self.nodes.get(c).unwrap();
-                if data.op.get_meta() == node.op.get_meta() {
-                    let ordered_parents = data.op.get_meta().ordered_parents;
-                    if ordered_parents && data.ancestors == node.ancestors {
-                        return Ok(Some(c));
-                    } else if !ordered_parents && data.ancestors.len() == node.ancestors.len() {
-                        let mut v1_sorted = data.ancestors.clone();
-                        v1_sorted.sort();
-                        let mut v2_sorted = node.ancestors.clone();
-                        v2_sorted.sort();
-                        if v1_sorted == v2_sorted {
+                if meta == node.op.get_meta() {
+                    if meta.name == "TensorShape" {
+                        let axis = data.op.get_args().unwrap()
+                            .downcast::<Axis>().unwrap();
+                        let node_axis = node.op.get_args().unwrap()
+                            .downcast::<Axis>().unwrap();
+                        if axis == node_axis {
+                            return Ok(Some(node.id));
+                        }
+                    } else {
+                        let ordered_parents = data.op.get_meta().ordered_parents;
+                        if ordered_parents && data.ancestors == node.ancestors {
                             return Ok(Some(c));
+                        } else if !ordered_parents && data.ancestors.len() == node.ancestors.len() {
+                            let mut v1_sorted = data.ancestors.clone();
+                            v1_sorted.sort();
+                            let mut v2_sorted = node.ancestors.clone();
+                            v2_sorted.sort();
+                            if v1_sorted == v2_sorted {
+                                return Ok(Some(c));
+                            }
                         }
                     }
                 }
