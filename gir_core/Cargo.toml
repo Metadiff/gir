@@ -1,0 +1,24 @@
+[package]
+name = "gir_core"
+version = "0.0.1"
+authors = ["Botev <botevmg@gmail.com>"]
+license = "MIT or Apache-2.0"
+
+[dependencies]
+symbolic_polynomials =  { git = "https://github.com/Metadiff/symbolic_polynomials" }
+error-chain = "0.7.2"
+slog = {version = "1.2", features = ["max_level_trace"] }
+slog-term = "1.3.5"
+
+#[replace]
+#"ocl-core:0.3.2" = { git = "https://github.com/cogciprocate/ocl-core" }
+#"cl-sys:0.2.1" = { git = "https://github.com/cogciprocate/cl-sys" }
+#"ocl:0.12.0" = { git = "https://github.com/cogciprocate/ocl/" }
+
+[lib]
+name = "gir_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "test"
+path = "src/main.rs"

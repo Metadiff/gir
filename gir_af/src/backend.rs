@@ -1,12 +1,11 @@
-use primitives::*;
-use graph::*;
-use backend::*;
+use gir_core::graph::*;
+use gir_core::backend::*;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::{Ref, RefCell};
 use std::io;
-use af::function::AfFunction;
+use super::function::AfFunction;
 use arrayfire as af;
 use arrayfire::Array;
 
@@ -74,25 +73,46 @@ impl Backend<AfFunction> for AfBackend {
         self.precisions = precisions;
     }
     fn info(&self, f:&mut io::Write) -> io::Result<()> {
-        writeln!(f, "Platform: {}", self.platform)?;
-        writeln!(f, "\tDevices: {}", af::device_count())
+        let version = af::get_version();
+        let revision = af::get_revision();
+        writeln!(f, "Arrayfire v{}.{}.{}({}) Backend Information:",
+                 version.0, version.1, version.2, revision)?;
+        writeln!(f, "=====================================================")?;
+        writeln!(f, "Active Platform:\n\
+            {t}Name: {}\n\
+            {t}Total Device Count: {}",
+                 af::device_info().1, af::device_count(), t="\t")?;
+        let (name, _, toolkit, compute) = af::device_info();
+        writeln!(f, "{t}Active Device:\n\
+                {t}{t}Name: {}\n\
+                {t}{t}Version: {}\n\
+                {t}{t}Toolkit: {}", name, compute, toolkit, t="\t")?;
+        writeln!(f, "=====================================================")
     }
 
     fn general_info(&self, f: &mut io::Write) -> io::Result<()> {
         let backend = af::get_active_backend();
-        writeln!(f, "Arrayfire Backend General Information:")?;
-        writeln!(f, "==================================================")?;
-        for b in af::get_available_backends() {
-            writeln!(f, "Platform: {}", b)?;
-            writeln!(f, "\tDevices: {}", af::device_count())?;
+        let version = af::get_version();
+        let revision = af::get_revision();
+        writeln!(f, "Arrayfire v{}.{}.{}({}) Backend General Information:",
+                 version.0, version.1, version.2, revision)?;
+        for (b_id, b) in af::get_available_backends().into_iter().enumerate() {
+            writeln!(f, "=====================================================")?;
             af::set_backend(b);
-            af::info();
+            writeln!(f, "Platform[{}]:\n\
+            {t}Name: {}\n\
+            {t}Total Device Count: {}",
+                     b_id, af::device_info().1, af::device_count(), t="\t")?;
+            for d_id in 0..af::device_count() {
+                af::set_device(d_id);
+                let (name, _, toolkit, compute) = af::device_info();
+                writeln!(f, "{t}Device[{}]:\n\
+                {t}{t}Name: {}\n\
+                {t}{t}Version: {}\n\
+                {t}{t}Toolkit: {}", d_id, name, compute, toolkit, t="\t")?;
+            }
         }
         af::set_backend(backend);
-        Ok(())
-    }
-
-    fn print_info(&self) -> io::Result<()> {
-        Ok(::arrayfire::info())
+        writeln!(f, "=====================================================")
     }
 }

@@ -39,15 +39,18 @@ pub struct AbstractMemoryMap {
 pub trait Backend<F>: Default {
     fn info(&self, f: &mut io::Write) -> io::Result<()>;
     fn general_info(&self, f: &mut io::Write) -> io::Result<()>;
+
     fn print_info(&self) -> io::Result<()> {
         self.info(&mut io::stdout())
     }
+
     fn print_general_info(&self) -> io::Result<()> {
         self.general_info(&mut io::stdout())
     }
 
     fn get_precisions(&self) -> &BackendPrecisions;
     fn set_precisions(&mut self, precisions: BackendPrecisions);
+
     fn make_function(&self, graph_function: GraphFunction) -> F;
 }
 

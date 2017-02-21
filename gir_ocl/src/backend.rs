@@ -1,11 +1,11 @@
-use primitives::*;
-use graph::*;
-use backend::*;
-use backend::opencl::function::*;
+use gir_core::primitives::*;
+use gir_core::graph::*;
+use gir_core::backend::*;
+use function::*;
 
 use ocl::{Platform, Device, Context, Queue, Buffer};
 use ocl::core::DeviceInfo;
-use ocl::flags::{MemFlags, CommandQueueProperties};
+use ocl::flags::{MEM_ALLOC_HOST_PTR, MEM_READ_WRITE, CommandQueueProperties};
 use std::io;
 use std::collections::HashMap;
 use tera::Tera;
@@ -36,7 +36,7 @@ impl Default for OpenCLBackend {
             platform: platform,
             device: device,
             context: context,
-            precisions: (Precision::P32, Precision::P32, Precision::P32)
+            precisions: BackendPrecisions::default()
         }
     }
 }
@@ -46,33 +46,37 @@ impl Backend<OpenCLFunction> for OpenCLBackend {
                      -> OpenCLFunction {
         let sym_input_shapes = gf.inputs.iter()
             .map(|&id| gf.graph.nodes[id].shape.clone()).collect();
-        let flags = Some(MemFlags::alloc_host_ptr() | MemFlags::read_write());
+        let flags = Some(MEM_READ_WRITE | MEM_ALLOC_HOST_PTR);
         let mut kernel_map = HashMap::new();
         let mut tera = compile_templates!("templates/kernels");
         for &i in &gf.graph.order {
             let mut context = ::tera::Context::new();
-            context.add("b_type", type_to_string(gf.graph.nodes[i].data_type, self.precisions));
-            context.add("c_type", "size_t");
-            kernel_map.insert(i, tera.render("store.tera", context));
+            let s = type_to_string(gf.graph.nodes[i].data_type, &self.precisions);
+            context.add("b_type", &s);
+            let s: String = "size_t".into();
+            context.add("c_type", &s);
+            kernel_map.insert(i, tera.render("store.tera", context).unwrap());
         }
+        let queue = Queue::new(&self.context, self.device).unwrap();
+        let memory_map = build_memory_map(&gf);
         OpenCLFunction {
             initialized: false,
             precisions: self.precisions,
             gf: gf,
-            memory_map: build_memory_map(&gf),
+            memory_map: memory_map,
             current_size: 0,
             sym_input_shapes: sym_input_shapes,
             last_shapes: Vec::new(),
             last_deduced: HashMap::new(),
-            buffer: Buffer::<u8>::new(self.queue.clone(), flags, 1 , None).unwrap(),
+            buffer: Buffer::<u8>::new(queue.clone(), flags, [1] , None).unwrap(),
             buffer_map: HashMap::new(),
             kernel_map: kernel_map,
-            queue: self.queue.clone()
+            queue: queue
         }
     }
 
     fn get_precisions(&self) -> &BackendPrecisions {
-        self.precisions
+        &self.precisions
     }
     fn set_precisions(&mut self, precisions: BackendPrecisions){
         self.precisions = precisions;
@@ -180,7 +184,7 @@ pub fn type_to_string(_type: FundamentalType, precisions: &BackendPrecisions) ->
             Precision::P32 => "float_32".into(),
             Precision::P64 => "float_64".into(),
         },
-        FundamentalType::UnsignedInt => match precisions.complex_precision {
+        FundamentalType::UnsignedInt |  FundamentalType::Complex => match precisions.complex_precision {
             Precision::P8 => unimplemented!(),
             Precision::P16 => unimplemented!(),
             Precision::P32 => unimplemented!(),

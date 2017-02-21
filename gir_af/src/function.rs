@@ -1,7 +1,7 @@
-use primitives::*;
-use graph::*;
-use backend::*;
-use errors::*;
+use gir_core::primitives::*;
+use gir_core::graph::*;
+use gir_core::backend::*;
+use gir_core::errors::*;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::ops::Neg;
 
 use arrayfire as af;
-use arrayfire::print_gen;
 
 #[derive(Clone)]
 pub struct AfFunction {

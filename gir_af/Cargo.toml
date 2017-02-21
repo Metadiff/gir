@@ -1,0 +1,19 @@
+[package]
+name = "gir_af"
+version = "0.0.1"
+authors = ["Botev <botevmg@gmail.com>"]
+license = "MIT or Apache-2.0"
+
+[dependencies]
+symbolic_polynomials =  { git = "https://github.com/Metadiff/symbolic_polynomials" }
+gir_core = {path = "../gir_core"}
+error-chain = "0.7.2"
+arrayfire = { git = "https://github.com/arrayfire/arrayfire-rust", branch = "devel" }
+
+[lib]
+name = "gir_af"
+path = "src/lib.rs"
+
+[[bin]]
+name = "test"
+path = "src/main.rs"
