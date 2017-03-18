@@ -17,27 +17,21 @@ he needs to do is then implement a frontend and a backend, or alternatively reus
 one of the existing ones.
 
 ## Main distinguishable features
-
-   1. Automatic shape verification (even of dynamic shapes) on graph construction time. 
-   This feature will be of great benefit for researchers and rapid development. 
-   Error messages on invalid shapes are pushed on the exact line where they are violated.
-   Additionally, this feature guarantees that there will be no runtime errors during the 
-   function execution. This is pretty well aligned in the spirit of Rust.
-
-   2. Full separation of the mathematical graph intermediate representation (GIR) 
-    together with the autodiff engine, the compiler optimization procedures and 
-    the backend engines. 
-    
-   3. OpenCL integration. No framework yet supports properly OpenCL. However, if we 
-    exclude Nvidia devices, OpenCL runs on anything - Intel or AMD chips, Intel or 
-    AMD graphic cards, FPGAs and other embedded devices. Thus we believe that it is 
-    a better abstraction than CUDA. 
-   
-   4. Ports to other languages. The fact that we develop GIR in Rust means that it is 
-   can be easily ported to any other languages and be reused anywhere.
-   
-   5. Explicit compiler control commands in the graph via auxiliary nodes. This can 
+  1. Fully abstract IR for mathematic computation, independent of the backend - 
+  towards LLVM paragidm. 
+  
+  2. Automatic constant and dynamic shape verification at graph construction time.
+  This will hopefully make the need of recompilation of graphs, where only a single 
+  shape has changed redundant, potentially improving compile times.
+  
+  3. Ports and interfaces to other languages and easy integration via FFI.
+  
+  4. Explicit compiler control commands in the graph via auxiliary nodes. This can 
    include commands like fork, join or barriers. 
+   
+  5. Optimizations based on memory budged - always get the maximum speed for a fixed
+  memory limit you have.
+  
    
 ## Current targets
 
